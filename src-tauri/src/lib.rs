@@ -2,6 +2,7 @@ mod files;
 mod fsio;
 mod menu;
 mod state;
+mod watch;
 
 use tauri::{Emitter, Manager};
 
@@ -29,10 +30,12 @@ pub fn run() {
             files::rename_file,
             files::reveal_in_finder,
             files::open_external,
-            files::get_documents_dir
+            files::get_documents_dir,
+            watch::set_watched_paths
         ])
         .setup(|app| {
             menu::build(app.handle())?;
+            watch::init(app).expect("初始化文件监听失败");
             Ok(())
         })
         // 菜单动作统一转发给前端注册表执行（菜单加速键 → 真实功能）

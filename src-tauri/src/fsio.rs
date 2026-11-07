@@ -57,16 +57,16 @@ pub fn atomic_write(path: &Path, contents: &[u8]) -> io::Result<()> {
     write_result
 }
 
-/// 文件修改时间快照（毫秒时间戳）。文件不存在时返回 None。
+/// 文件修改时间快照（微秒时间戳）。文件不存在时返回 None。
+/// 用微秒而非毫秒：同一毫秒内的连续写入也能区分，避免漏判外部修改；
+/// 微秒级数值 < 2^53，跨 JSON 传输到前端不损失精度。
 /// 用于保存前的外部修改检测：写入前比对当前 mtime 与快照是否一致。
-/// （Phase 2 的 fs 命令接入后使用）
-#[allow(dead_code)]
-pub fn mtime_millis(path: &Path) -> Option<u128> {
+pub fn mtime_snapshot(path: &Path) -> Option<u128> {
     fs::metadata(path)
         .and_then(|m| m.modified())
         .ok()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_millis())
+        .map(|d| d.as_micros())
 }
 
 #[cfg(test)]
@@ -117,7 +117,22 @@ mod tests {
     }
 
     #[test]
-    fn mtime_millis_works() {
+    fn mtime_snapshot_works() {
+        // 同一毫秒内的两次写入也应产生不同快照（微秒精度）
+        let dir = std::env::temp_dir().join(format!(
+            "notedock-test-mtime2-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("f.txt");
+        fs::write(&path, b"1").unwrap();
+        let a = mtime_snapshot(&path).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        fs::write(&path, b"22").unwrap();
+        let b = mtime_snapshot(&path).unwrap();
+        assert!(b > a, "microsecond resolution expected");
+        fs::remove_dir_all(&dir).unwrap();
         let dir = std::env::temp_dir().join(format!(
             "notedock-test-mtime-{}-{}",
             std::process::id(),
@@ -125,9 +140,9 @@ mod tests {
         ));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("file.txt");
-        assert_eq!(mtime_millis(&path), None);
+        assert_eq!(mtime_snapshot(&path), None);
         fs::write(&path, b"x").unwrap();
-        assert!(mtime_millis(&path).is_some());
+        assert!(mtime_snapshot(&path).is_some());
         fs::remove_dir_all(&dir).unwrap();
     }
 }

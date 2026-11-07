@@ -99,7 +99,7 @@ pub fn read_text_file(path: String) -> Result<TextFileInfo, FsError> {
         content,
         encoding,
         has_bom,
-        mtime: crate::fsio::mtime_millis(p),
+        mtime: crate::fsio::mtime_snapshot(p),
         size: meta.len(),
         kind: kind_for_path(p),
     })
@@ -128,7 +128,7 @@ pub struct WriteResult {
 #[tauri::command]
 pub fn write_text_file(req: WriteRequest) -> Result<WriteResult, FsError> {
     let p = Path::new(&req.path);
-    let current = crate::fsio::mtime_millis(p);
+    let current = crate::fsio::mtime_snapshot(p);
     if !req.force.unwrap_or(false) {
         if let Some(expected) = req.expected_mtime {
             if current != Some(expected) {
@@ -143,7 +143,7 @@ pub fn write_text_file(req: WriteRequest) -> Result<WriteResult, FsError> {
     payload.extend_from_slice(req.content.as_bytes());
     crate::fsio::atomic_write(p, &payload)?;
     Ok(WriteResult {
-        mtime: crate::fsio::mtime_millis(p).unwrap_or(0),
+        mtime: crate::fsio::mtime_snapshot(p).unwrap_or(0),
     })
 }
 
@@ -164,7 +164,7 @@ pub fn stat_path(path: String) -> Result<PathInfo, FsError> {
         Ok(meta) => Ok(PathInfo {
             exists: true,
             is_file: meta.is_file(),
-            mtime: crate::fsio::mtime_millis(p),
+            mtime: crate::fsio::mtime_snapshot(p),
             size: meta.len(),
         }),
         Err(_) => Ok(PathInfo { exists: false, is_file: false, mtime: None, size: 0 }),
@@ -268,7 +268,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("conflict.md");
         std::fs::write(&path, b"v1").unwrap();
-        let real_mtime = crate::fsio::mtime_millis(&path).unwrap();
+        let real_mtime = crate::fsio::mtime_snapshot(&path).unwrap();
 
         // 快照一致 → 保存成功
         let ok = write_text_file(WriteRequest {

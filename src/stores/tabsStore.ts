@@ -1,10 +1,12 @@
 import { create } from "zustand";
 import { save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { ipc } from "../lib/ipc";
+import { flushMeta } from "./metaStore";
 import { parseFsError } from "../lib/fsError";
 import { basename, defaultNameFor, kindForPath } from "../lib/path";
 import { useUiStore } from "../lib/toast";
 import { useMetaStore } from "./metaStore";
+import { syncWatchedPaths } from "../lib/watcher";
 import type { FileKind } from "../types/state";
 import { t } from "../i18n";
 
@@ -56,6 +58,7 @@ interface TabsStore {
   setActive(id: string): Promise<void>;
   setActiveIndex(index: number): void;
   updateContent(id: string, content: string, cursor?: number): void;
+  setTabConflict(id: string, conflict: ConflictKind | null): void;
   setEditorState(id: string, patch: Partial<Pick<Tab, "cursor" | "scrollTop">>): void;
   toggleSourceMode(id: string): void;
   reloadFromDisk(id: string): Promise<void>;
@@ -106,6 +109,7 @@ function activeTab(): Tab | undefined {
 
 /** 当前会话快照 → metaStore（防抖落盘）。 */
 function persistSession(): void {
+  syncWatchedPaths();
   const s = useTabsStore.getState();
   const active = s.tabs.findIndex((t) => t.id === s.activeId);
   useMetaStore.getState().setSession({
@@ -130,6 +134,42 @@ function showToast(message: string): void {
  */
 const inflightOpens = new Map<string, Promise<boolean>>();
 let restoreStarted = false;
+
+// —— 自动保存（需求 §5.3）：内容变更后 800ms 防抖写盘 ——
+const AUTOSAVE_DELAY_MS = 800;
+const autosaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function scheduleAutosave(id: string): void {
+  const existing = autosaveTimers.get(id);
+  if (existing) clearTimeout(existing);
+  autosaveTimers.set(
+    id,
+    setTimeout(() => {
+      autosaveTimers.delete(id);
+      const s = useTabsStore.getState();
+      const tab = s.tabs.find((t) => t.id === id);
+      // 冲突未解决时不自动重试（等用户选择重新加载/覆盖/另存为）
+      if (tab?.dirty && !tab.conflict) void s.save(id);
+    }, AUTOSAVE_DELAY_MS),
+  );
+}
+
+function cancelAutosave(id: string): void {
+  const timer = autosaveTimers.get(id);
+  if (timer) {
+    clearTimeout(timer);
+    autosaveTimers.delete(id);
+  }
+}
+
+/** 立即保存所有有未保存内容的标签页（窗口失焦/关闭/退出前 flush）+ 元数据。 */
+export async function flushAllDirty(): Promise<void> {
+  const s = useTabsStore.getState();
+  for (const tab of s.tabs) {
+    if (tab.dirty && !tab.conflict) await s.save(tab.id);
+  }
+  await flushMeta();
+}
 
 /** 新建文件的默认目录：偏好目录 → 文稿目录（缓存）。 */
 let cachedDocsDir: string | null | undefined;
@@ -176,6 +216,7 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   },
 
   save: async (id, opts) => {
+    cancelAutosave(id);
     const tab = findTab(id);
     if (!tab) return false;
     try {
@@ -237,6 +278,7 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   },
 
   closeTab: async (id) => {
+    cancelAutosave(id);
     const tab = findTab(id);
     if (!tab) return;
     if (tab.dirty) {
@@ -278,7 +320,18 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
 
   updateContent: (id, content, cursor) => {
     const tab = findTab(id);
-    patchTab(id, { content, dirty: true, cursor: cursor ?? tab?.cursor ?? 0 });
+    if (!tab) return;
+    // 内容与磁盘基线一致时不置脏（外部重载回写等场景），避免虚假保存循环
+    if (!tab.dirty && tab.content === content) {
+      patchTab(id, { cursor: cursor ?? tab.cursor });
+      return;
+    }
+    patchTab(id, { content, dirty: true, cursor: cursor ?? tab.cursor });
+    scheduleAutosave(id);
+  },
+
+  setTabConflict: (id, conflict) => {
+    patchTab(id, { conflict });
   },
 
   setEditorState: (id, patch) => {

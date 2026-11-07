@@ -1,10 +1,13 @@
 import { useEffect } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import AppShell from "./components/layout/AppShell";
 import RenameDialog from "./components/common/RenameDialog";
 import Toast from "./components/common/Toast";
+import { initFsWatcher } from "./lib/watcher";
 import { useFileActions } from "./lib/useFileActions";
 import { useTheme } from "./lib/useTheme";
-import { useMetaStore } from "./stores/metaStore";
+import { flushAllDirty } from "./stores/tabsStore";
+import { flushMeta, useMetaStore } from "./stores/metaStore";
 import { useTabsStore } from "./stores/tabsStore";
 
 export default function App() {
@@ -36,6 +39,27 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // —— 可靠性（需求 §5.3、§6.4）：文件监听 + 保存 flush ——
+  useEffect(() => {
+    const unwatch = initFsWatcher();
+
+    // 窗口失焦：flush 所有未保存内容
+    const onBlur = () => void flushAllDirty();
+    window.addEventListener("blur", onBlur);
+
+    // 窗口关闭/退出：先落盘再放行关闭
+    const unClose = getCurrentWindow().onCloseRequested(async () => {
+      await flushAllDirty();
+      await flushMeta();
+    });
+
+    return () => {
+      unwatch();
+      onBlur && window.removeEventListener("blur", onBlur);
+      void unClose.then((f) => f());
+    };
   }, []);
 
   return (
