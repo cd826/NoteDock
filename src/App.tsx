@@ -1,51 +1,27 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
+import AppShell from "./components/layout/AppShell";
+import { dispatchMenuAction } from "./lib/menuActions";
+import { useTheme } from "./lib/useTheme";
+import { useMetaStore } from "./stores/metaStore";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+export default function App() {
+  // 深浅色跟随系统 + 偏好（需求 §8.2）
+  useTheme();
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  // 启动时加载本地元数据（固定/最近/偏好/会话）
+  const hydrate = useMetaStore((s) => s.hydrate);
+  useEffect(() => {
+    void hydrate();
+  }, [hydrate]);
 
-  return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+  // 原生菜单动作 → 前端注册表（menu.rs → menuActions）
+  useEffect(() => {
+    const unlisten = listen<string>("menu-action", (e) => dispatchMenuAction(e.payload));
+    return () => {
+      void unlisten.then((f) => f());
+    };
+  }, []);
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
-  );
+  return <AppShell />;
 }
-
-export default App;
