@@ -29,18 +29,56 @@ describe("metaStore pinned/recents", () => {
     useMetaStore.setState({ hydrated: true, meta: structuredClone(DEFAULT_META) });
   });
 
-  it("recordOpened 置顶、去重、上限 50", () => {
+  it("recordOpened：新文件置顶、上限 50", () => {
     const s = useMetaStore.getState();
     s.recordOpened("/a.md");
     s.recordOpened("/b.md");
-    s.recordOpened("/a.md");
     const recents = useMetaStore.getState().meta.recents;
-    expect(recents.map((r) => r.path)).toEqual(["/a.md", "/b.md"]);
+    expect(recents.map((r) => r.path)).toEqual(["/b.md", "/a.md"]);
 
     for (let i = 0; i < 60; i++) s.recordOpened(`/f${i}.md`);
     const capped = useMetaStore.getState().meta.recents;
     expect(capped.length).toBe(50);
     expect(capped[0].path).toBe("/f59.md");
+  });
+
+  it("recordOpened：已存在文件就地更新时间，列表顺序保持稳定（防跳动）", () => {
+    const s = useMetaStore.getState();
+    s.recordOpened("/a.md");
+    s.recordOpened("/b.md");
+    s.recordOpened("/c.md");
+    const before = useMetaStore.getState().meta.recents.map((r) => r.path);
+    expect(before).toEqual(["/c.md", "/b.md", "/a.md"]);
+
+    vi.useFakeTimers();
+    vi.advanceTimersByTime(10_000);
+    // 重新点击最早打开的 a.md：时间更新，但顺序不变
+    s.recordOpened("/a.md");
+    vi.useRealTimers();
+    const state = useMetaStore.getState().meta;
+    expect(state.recents.map((r) => r.path)).toEqual(["/c.md", "/b.md", "/a.md"]);
+    // 时间戳已更新
+    const a = state.recents.find((r) => r.path === "/a.md")!;
+    const b = state.recents.find((r) => r.path === "/b.md")!;
+    expect(a.lastOpenedAt).toBeGreaterThan(b.lastOpenedAt);
+  });
+
+  it("hydrate：按最近访问时间重排并去重", async () => {
+    const { ipc } = await import("../../lib/ipc");
+    vi.mocked(ipc.loadAppState).mockResolvedValueOnce({
+      ...structuredClone(DEFAULT_META),
+      recents: [
+        { path: "/old.md", lastOpenedAt: 1_000 },
+        { path: "/new.md", lastOpenedAt: 3_000 },
+        { path: "/old.md", lastOpenedAt: 2_000 }, // 重复项
+        { path: "/mid.md", lastOpenedAt: 2_500 },
+      ],
+    } as never);
+    useMetaStore.setState({ hydrated: false });
+    await useMetaStore.getState().hydrate();
+    const recents = useMetaStore.getState().meta.recents;
+    expect(recents.map((r) => r.path)).toEqual(["/new.md", "/mid.md", "/old.md"]);
+    expect(recents.filter((r) => r.path === "/old.md")).toHaveLength(1);
   });
 
   it("固定文件不进入最近列表（§4.1 固定优先）", () => {

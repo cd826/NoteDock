@@ -56,7 +56,17 @@ export const useMetaStore = create<MetaStore>((set, get) => ({
     try {
       const loaded = await ipc.loadAppState();
       // 与默认值合并：兼容旧版本/缺字段（Rust 侧 serde default 同样兜底）
-      set({ meta: { ...DEFAULT_META, ...loaded }, hydrated: true });
+      const meta: AppMeta = { ...DEFAULT_META, ...loaded };
+      // 启动/重载时按最近访问时间重排并去重（会话内的顺序稳定性由 recordOpened 保证）
+      const seen = new Set<string>();
+      meta.recents = [...meta.recents]
+        .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)
+        .filter((r) => {
+          if (seen.has(r.path)) return false;
+          seen.add(r.path);
+          return true;
+        });
+      set({ meta, hydrated: true });
     } catch (err) {
       // 元数据读取失败不应阻断应用启动（用户文件不受影响）
       console.error("[meta] 加载元数据失败", err);
@@ -76,9 +86,18 @@ export const useMetaStore = create<MetaStore>((set, get) => ({
       // 固定文件不进入最近列表（需求 §4.1：同一文件只存在于一个区域，固定优先）
       if (s.meta.pinned.some((p) => p.path === path)) return s;
       const now = Date.now();
-      const rest = s.meta.recents.filter((r) => r.path !== path);
-      const recents = [{ path, lastOpenedAt: now }, ...rest].slice(0, MAX_RECENTS);
-      return { meta: { ...s.meta, recents } };
+      let touched = false;
+      // 就地更新访问时间，保持列表顺序稳定：点击已存在的文件不会把列表打乱，
+      // 避免用户产生"点击未生效"的错觉；顺序在下次启动 hydrate 时按时间重排。
+      let recents = s.meta.recents.map((r) => {
+        if (r.path !== path) return r;
+        touched = true;
+        return { ...r, lastOpenedAt: now };
+      });
+      if (!touched) {
+        recents = [{ path, lastOpenedAt: now }, ...recents];
+      }
+      return { meta: { ...s.meta, recents: recents.slice(0, MAX_RECENTS) } };
     });
     schedulePersist();
   },

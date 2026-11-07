@@ -54,6 +54,8 @@ function ItemIcon({ path }: { path: string }) {
 interface FileItemProps {
   path: string;
   missing: boolean;
+  /** 是否为当前打开的文件（选中态与路径绑定，不依赖列表索引）。 */
+  active: boolean;
   onOpen: () => void;
   /** 固定文件的操作：取消固定；最近文件的操作：固定 + 移除。 */
   actions?: React.ReactNode;
@@ -62,9 +64,10 @@ interface FileItemProps {
   onDropAtIndex?: (index: number) => void;
 }
 
-function FileItem({ path, missing, onOpen, actions, draggableIndex, onDragStartIndex, onDropAtIndex }: FileItemProps) {
+function FileItem({ path, missing, active, onOpen, actions, draggableIndex, onDragStartIndex, onDropAtIndex }: FileItemProps) {
   const [dragOver, setDragOver] = useState(false);
   const name = basename(path);
+  const selected = active && !missing;
   return (
     <div
       title={missing ? `${name}\n${t("missingText")}` : name}
@@ -87,11 +90,15 @@ function FileItem({ path, missing, onOpen, actions, draggableIndex, onDragStartI
         onDropAtIndex?.(draggableIndex ?? 0);
       }}
       onClick={onOpen}
+      aria-current={selected ? "true" : undefined}
       className={[
         "group flex cursor-default items-center gap-1.5 rounded-md px-2 py-1 text-[13px] leading-none transition-colors",
         missing
           ? "text-neutral-300 dark:text-neutral-600"
-          : "text-neutral-700 hover:bg-neutral-200/60 dark:text-neutral-300 dark:hover:bg-neutral-700/50",
+          : selected
+            ? // macOS 风格选中态：轻量中性底色，编辑器获得焦点后仍保持提示
+              "bg-neutral-200/90 text-neutral-900 dark:bg-neutral-700/60 dark:text-neutral-100"
+            : "text-neutral-700 hover:bg-neutral-200/60 dark:text-neutral-300 dark:hover:bg-neutral-700/50",
         dragOver ? "bg-blue-100 dark:bg-blue-900/40 ring-1 ring-blue-400" : "",
       ].join(" ")}
     >
@@ -155,6 +162,11 @@ export default function Sidebar({ width }: { width: number }) {
   const recentLimit = useMetaStore((s) => s.meta.prefs.recentLimit);
   const missingPaths = useUiStore((s) => s.missingPaths);
   const openPath = useTabsStore((s) => s.openPath);
+  // 当前打开文件的路径（派生原始值：仅路径变化时触发重渲染，与列表索引无关）
+  const activeTabPath = useTabsStore((s) => {
+    const tab = s.tabs.find((t) => t.id === s.activeId);
+    return tab?.path ?? null;
+  });
   const [expanded, setExpanded] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const focusTickRef = useRef(0);
@@ -205,6 +217,7 @@ export default function Sidebar({ width }: { width: number }) {
                   key={entry.path}
                   path={entry.path}
                   missing={!!missingPaths[entry.path]}
+                  active={activeTabPath === entry.path}
                   onOpen={() => void openPath(entry.path)}
                   draggableIndex={index}
                   onDragStartIndex={setDragIndex}
@@ -252,6 +265,7 @@ export default function Sidebar({ width }: { width: number }) {
                     key={entry.path}
                     path={entry.path}
                     missing={!!missingPaths[entry.path]}
+                    active={activeTabPath === entry.path}
                     onOpen={() => void openPath(entry.path)}
                     actions={
                       <>
