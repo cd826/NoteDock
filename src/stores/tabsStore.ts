@@ -55,7 +55,7 @@ interface TabsStore {
   closeTab(id: string): Promise<void>;
   setActive(id: string): Promise<void>;
   setActiveIndex(index: number): void;
-  updateContent(id: string, content: string): void;
+  updateContent(id: string, content: string, cursor?: number): void;
   setEditorState(id: string, patch: Partial<Pick<Tab, "cursor" | "scrollTop">>): void;
   toggleSourceMode(id: string): void;
   reloadFromDisk(id: string): Promise<void>;
@@ -276,8 +276,9 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
     if (tab) void s.setActive(tab.id);
   },
 
-  updateContent: (id, content) => {
-    patchTab(id, { content, dirty: true });
+  updateContent: (id, content, cursor) => {
+    const tab = findTab(id);
+    patchTab(id, { content, dirty: true, cursor: cursor ?? tab?.cursor ?? 0 });
   },
 
   setEditorState: (id, patch) => {

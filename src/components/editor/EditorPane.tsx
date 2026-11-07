@@ -1,6 +1,11 @@
 import { useEffect, useRef } from "react";
+import { undo, redo } from "@codemirror/commands";
+import { openSearchPanel } from "@codemirror/search";
 import { t } from "../../i18n";
+import { MenuIds, registerMenuAction } from "../../lib/menuActions";
 import { useTabsStore, type Tab } from "../../stores/tabsStore";
+import { createEditor, kindExtensions, type EditorHandles } from "../../editor/createEditor";
+import { livePreviewFacet } from "../../editor/livePreview";
 import TabBar from "./TabBar";
 
 /** 冲突/缺失横幅（需求 §6.4：不静默覆盖，明确提示并提供恢复路径）。 */
@@ -51,27 +56,110 @@ function EncodingNotice({ encoding }: { encoding: string }) {
 }
 
 /**
- * 右侧编辑区主面板。
- * Phase 2：textarea 直接编辑真实文件（Phase 3 换为 CodeMirror 6 即时渲染）。
+ * 右侧编辑区主面板（需求 §5.1：Typora 风格即时渲染，CodeMirror 6）。
+ * 单一 EditorView 实例跨标签页复用；文档/光标/滚动按标签页同步。
  * 正文居中、最大宽度 800px（需求 §4.2）。
  */
 export default function EditorPane() {
   const tabs = useTabsStore((s) => s.tabs);
   const activeId = useTabsStore((s) => s.activeId);
-  const updateContent = useTabsStore((s) => s.updateContent);
-  const setEditorState = useTabsStore((s) => s.setEditorState);
   const tab = tabs.find((x) => x.id === activeId);
 
-  // 恢复会话时恢复滚动位置
-  const taRef = useRef<HTMLTextAreaElement>(null);
-  const restoredScrollRef = useRef<string | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const handlesRef = useRef<EditorHandles | null>(null);
+  const activeTabIdRef = useRef<string | null>(null);
+
+  activeTabIdRef.current = activeId;
+
+  // —— 创建 EditorView（仅一次，随后由同步 effect 驱动）——
   useEffect(() => {
-    if (!tab || !taRef.current) return;
-    if (restoredScrollRef.current !== tab.id) {
-      taRef.current.scrollTop = tab.scrollTop;
-      restoredScrollRef.current = tab.id;
+    if (!hostRef.current) return;
+    const handles = createEditor({
+      parent: hostRef.current,
+      kind: "md",
+      doc: "",
+      onUpdate: ({ docChanged, doc, cursor }) => {
+        const id = activeTabIdRef.current;
+        if (!id) return;
+        if (docChanged) {
+          useTabsStore.getState().updateContent(id, doc, cursor);
+        } else {
+          useTabsStore.getState().setEditorState(id, { cursor });
+        }
+      },
+    });
+    handlesRef.current = handles;
+
+    // 滚动位置记录（持久层自带防抖）
+    let scrollTimer: ReturnType<typeof setTimeout> | null = null;
+    const onScroll = () => {
+      if (scrollTimer) return;
+      scrollTimer = setTimeout(() => {
+        scrollTimer = null;
+        const id = activeTabIdRef.current;
+        if (id) {
+          useTabsStore.getState().setEditorState(id, { scrollTop: handles.view.scrollDOM.scrollTop });
+        }
+      }, 150);
+    };
+    handles.view.scrollDOM.addEventListener("scroll", onScroll);
+
+    // 编辑器相关菜单动作：查找替换 / 撤销重做 / 源码模式
+    const unsubs = [
+      registerMenuAction(MenuIds.find, () => {
+        handles.view.focus();
+        openSearchPanel(handles.view);
+      }),
+      registerMenuAction(MenuIds.replace, () => {
+        handles.view.focus();
+        openSearchPanel(handles.view);
+      }),
+      registerMenuAction(MenuIds.undo, () => void undo(handles.view)),
+      registerMenuAction(MenuIds.redo, () => void redo(handles.view)),
+      registerMenuAction(MenuIds.toggleSourceMode, () => {
+        const id = activeTabIdRef.current;
+        if (id) useTabsStore.getState().toggleSourceMode(id);
+      }),
+    ];
+
+    return () => {
+      unsubs.forEach((un) => un());
+      handles.view.scrollDOM.removeEventListener("scroll", onScroll);
+      handles.view.destroy();
+      handlesRef.current = null;
+    };
+  }, []);
+
+  // —— 标签页切换 / 类型 / 源码模式 / 外部重载 → 同步视图 ——
+  const tabId = tab?.id;
+  const tabKind = tab?.kind;
+  const tabSourceMode = tab?.sourceMode;
+  const tabConflict = tab?.conflict;
+  useEffect(() => {
+    const handles = handlesRef.current;
+    if (!handles || !tabId) return;
+    const currentTab = useTabsStore.getState().tabs.find((x) => x.id === tabId);
+    if (!currentTab) return;
+    handles.view.dispatch({
+      effects: [
+        handles.kindComp.reconfigure(kindExtensions(currentTab.kind)),
+        handles.srcComp.reconfigure(livePreviewFacet.of(!currentTab.sourceMode)),
+      ],
+    });
+    if (handles.view.state.doc.toString() !== currentTab.content) {
+      // 外部变更（打开新文件 / 从磁盘重载）：整体替换文档并恢复光标
+      const cursor = Math.min(currentTab.cursor, currentTab.content.length);
+      handles.view.dispatch({
+        changes: { from: 0, to: handles.view.state.doc.length, insert: currentTab.content },
+        selection: { anchor: cursor },
+        scrollIntoView: true,
+      });
     }
-  }, [tab]);
+    const raf = requestAnimationFrame(() => {
+      handles.view.scrollDOM.scrollTop = currentTab.scrollTop;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [tabId, tabKind, tabSourceMode, tabConflict]);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -81,15 +169,7 @@ export default function EditorPane() {
       {tab ? (
         <div className="flex min-h-0 flex-1 justify-center overflow-hidden">
           <div className="flex min-h-0 w-full max-w-[800px] flex-col px-6">
-            <textarea
-              key={tab.id}
-              ref={taRef}
-              value={tab.content}
-              onChange={(e) => updateContent(tab.id, e.target.value)}
-              onScroll={(e) => setEditorState(tab.id, { scrollTop: e.currentTarget.scrollTop })}
-              spellCheck={false}
-              className="mt-6 mb-8 min-h-0 flex-1 resize-none bg-transparent text-[15px] leading-relaxed text-neutral-800 outline-none dark:text-neutral-200"
-            />
+            <div ref={hostRef} className="min-h-0 flex-1" />
           </div>
         </div>
       ) : (
