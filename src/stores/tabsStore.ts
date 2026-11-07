@@ -124,6 +124,13 @@ function showToast(message: string): void {
   useUiStore.getState().showToast(message);
 }
 
+/**
+ * 同一路径的并发 openPath 去重：会话恢复（React StrictMode 下 effect 会并发触发）
+ * 或用户快速双击侧栏条目时，避免同一文件被读取两次开出重复标签页。
+ */
+const inflightOpens = new Map<string, Promise<boolean>>();
+let restoreStarted = false;
+
 /** 新建文件的默认目录：偏好目录 → 文稿目录（缓存）。 */
 let cachedDocsDir: string | null | undefined;
 async function defaultSaveDir(): Promise<string | undefined> {
@@ -139,32 +146,12 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   tabs: [],
   activeId: null,
 
-  openPath: async (path, opts) => {
-    const existing = get().tabs.find((t) => t.path === path);
-    if (existing) {
-      await get().setActive(existing.id);
-      return true;
-    }
-    // 焦点即将转移到新标签页：先保存当前脏标签页（需求 §4.3 切换时自动保存）
-    const prev = get().tabs.find((t) => t.id === get().activeId);
-    if (prev?.dirty && prev.conflict !== "missing") {
-      await get().save(prev.id);
-    }
-    try {
-      const info = await ipc.readTextFile(path);
-      const tab = tabFromRead(path, info, opts);
-      set((s) => ({ tabs: [...s.tabs, tab], activeId: tab.id }));
-      useMetaStore.getState().recordOpened(path);
-      persistSession();
-      return true;
-    } catch (raw) {
-      const err = parseFsError(raw);
-      if (!opts?.silent) {
-        if (err.kind === "not-found") showToast(t("missingOpenToast"));
-        else if (err.kind === "io") showToast(err.message);
-      }
-      return false;
-    }
+  openPath: (path, opts) => {
+    const inflight = inflightOpens.get(path);
+    if (inflight) return inflight;
+    const task = doOpenPath(path, opts).finally(() => inflightOpens.delete(path));
+    inflightOpens.set(path, task);
+    return task;
   },
 
   openPaths: async (paths) => {
@@ -217,7 +204,14 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
 
   saveActive: async () => {
     const tab = activeTab();
-    if (tab?.dirty) await get().save(tab.id);
+    if (!tab) return;
+    if (!tab.dirty) {
+      // 内容未变化也视为已保存（用户确认性 ⌘S）
+      useUiStore.getState().markSaved();
+      return;
+    }
+    const ok = await get().save(tab.id);
+    if (ok) useUiStore.getState().markSaved();
   },
 
   saveAs: async (id) => {
@@ -329,10 +323,16 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   },
 
   restoreSession: async () => {
+    // StrictMode 双挂载/快速触发下只允许执行一次
+    if (restoreStarted) return;
+    restoreStarted = true;
     const meta = useMetaStore.getState().meta;
     if (!meta.prefs.restoreSession || meta.session.tabs.length === 0) return;
     let missing = 0;
+    const seen = new Set<string>();
     for (const entry of meta.session.tabs) {
+      if (seen.has(entry.path)) continue; // 历史数据可能含重复项
+      seen.add(entry.path);
       const ok = await get().openPath(entry.path, {
         silent: true,
         cursor: entry.cursor,
@@ -349,3 +349,33 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
     }
   },
 }));
+
+/** openPath 的实际实现（经 inflightOpens 去重包装）。 */
+async function doOpenPath(path: string, opts?: OpenOptions): Promise<boolean> {
+  const get = () => useTabsStore.getState();
+  const existing = get().tabs.find((t) => t.path === path);
+  if (existing) {
+    await get().setActive(existing.id);
+    return true;
+  }
+  // 焦点即将转移到新标签页：先保存当前脏标签页（需求 §4.3 切换时自动保存）
+  const prev = get().tabs.find((t) => t.id === get().activeId);
+  if (prev?.dirty && prev.conflict !== "missing") {
+    await get().save(prev.id);
+  }
+  try {
+    const info = await ipc.readTextFile(path);
+    const tab = tabFromRead(path, info, opts);
+    useTabsStore.setState((s) => ({ tabs: [...s.tabs, tab], activeId: tab.id }));
+    useMetaStore.getState().recordOpened(path);
+    persistSession();
+    return true;
+  } catch (raw) {
+    const err = parseFsError(raw);
+    if (!opts?.silent) {
+      if (err.kind === "not-found") showToast(t("missingOpenToast"));
+      else if (err.kind === "io") showToast(err.message);
+    }
+    return false;
+  }
+}

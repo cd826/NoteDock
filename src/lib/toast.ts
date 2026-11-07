@@ -4,12 +4,15 @@ import { create } from "zustand";
 
 interface UiStore {
   toast: { message: string; id: number } | null;
+  /** 最近一次显式保存成功的时间戳（0 = 无），用于标签栏"已保存"闪烁提示。 */
+  savedAt: number;
   /** 重命名对话框打开时的目标标签页 id。 */
   renameTargetTabId: string | null;
   /** 已确认失效（移动/删除）的路径集合。 */
   missingPaths: Record<string, true>;
   showToast(message: string): void;
   clearToast(): void;
+  markSaved(): void;
   openRenameDialog(tabId: string): void;
   closeRenameDialog(): void;
   setMissing(paths: string[]): void;
@@ -20,6 +23,7 @@ let toastSeq = 0;
 
 export const useUiStore = create<UiStore>((set) => ({
   toast: null,
+  savedAt: 0,
   renameTargetTabId: null,
   missingPaths: {},
   showToast: (message) => {
@@ -34,6 +38,7 @@ export const useUiStore = create<UiStore>((set) => ({
     if (toastTimer) clearTimeout(toastTimer);
     set({ toast: null });
   },
+  markSaved: () => set({ savedAt: Date.now() }),
   openRenameDialog: (tabId) => set({ renameTargetTabId: tabId }),
   closeRenameDialog: () => set({ renameTargetTabId: null }),
   setMissing: (paths) =>

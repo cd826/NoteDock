@@ -20,6 +20,7 @@ const zh = {
   // 编辑区
   editorEmptyTitle: "NoteDock",
   editorEmptyHint: "从左侧打开文件，或拖入 .md / .txt / .sql 文件开始编辑",
+  savedFlash: "已保存",
 
   // 文件状态
   conflictText: "文件已被其他应用修改",

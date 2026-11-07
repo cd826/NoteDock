@@ -1,4 +1,5 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { MenuIds, registerMenuAction } from "../../lib/menuActions";
 import { useMetaStore } from "../../stores/metaStore";
 import Sidebar from "../Sidebar/Sidebar";
 import EditorArea from "../editor/EditorArea";
@@ -11,6 +12,17 @@ export default function AppShell() {
   const sidebarHidden = useMetaStore((s) => s.meta.prefs.sidebarHidden);
   const sidebarWidth = useMetaStore((s) => s.meta.prefs.sidebarWidth);
   const shellRef = useRef<HTMLDivElement>(null);
+
+  // 切换侧边栏的处理器必须注册在永不离场的组件上：
+  // 若注册在 Sidebar 内部，侧边栏隐藏（组件卸载）后 ⌘⌥S 与恢复按钮都会失效。
+  useEffect(
+    () =>
+      registerMenuAction(MenuIds.toggleSidebar, () => {
+        const s = useMetaStore.getState();
+        s.setPrefs({ sidebarHidden: !s.meta.prefs.sidebarHidden });
+      }),
+    [],
+  );
 
   // 侧边栏拖拽调宽（需求 §8.3 支持调整侧边栏宽度）
   const startResize = useCallback(

@@ -20,6 +20,7 @@ const en: Record<keyof typeof zh, string> = {
 
   editorEmptyTitle: "NoteDock",
   editorEmptyHint: "Open a file from the sidebar, or drop .md / .txt / .sql files to edit",
+  savedFlash: "Saved",
 
   conflictText: "File was modified by another app",
   missingText: "File has been moved or deleted",

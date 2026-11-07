@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { ipc } from "./ipc";
-import { MenuIds, registerMenuAction } from "./menuActions";
+import { dispatchMenuAction, MenuIds, registerMenuAction } from "./menuActions";
 import { useMetaStore } from "../stores/metaStore";
 import { useTabsStore } from "../stores/tabsStore";
 import { useUiStore } from "./toast";
@@ -30,7 +30,7 @@ function activeTogglePin(): void {
 }
 
 /**
- * 应用级动作接线：菜单/快捷键、Finder 打开事件、拖拽打开。
+ * 应用级动作接线：菜单/快捷键事件、Finder 打开事件、拖拽打开。
  * 各动作 handler 一律经 store.getState() 取最新状态，避免闭包过期。
  */
 export function useFileActions(): void {
@@ -60,6 +60,12 @@ export function useFileActions(): void {
       }),
     ];
 
+    // 原生菜单/快捷键动作 → 注册表（menu.rs → on_menu_event → 此处分发）。
+    // 注意：此监听是整条快捷键链路的入口，缺失会导致全部菜单快捷键失效。
+    const unMenuPromise = listen<string>("menu-action", (e) =>
+      dispatchMenuAction(e.payload),
+    );
+
     // Finder 双击 / 拖到 Dock 图标（lib.rs RunEvent::Opened）
     const unlistenPromise = listen<string[]>("open-paths", (e) =>
       void tabs().openPaths(e.payload),
@@ -75,6 +81,7 @@ export function useFileActions(): void {
 
     return () => {
       unsubs.forEach((un) => un());
+      void unMenuPromise.then((un) => un());
       void unlistenPromise.then((un) => un());
       void unDragPromise.then((un) => un());
     };

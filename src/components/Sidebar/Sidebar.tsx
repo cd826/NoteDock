@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { t } from "../../i18n";
 import { ipc } from "../../lib/ipc";
-import { dispatchMenuAction, MenuIds, registerMenuAction } from "../../lib/menuActions";
+import { dispatchMenuAction, MenuIds } from "../../lib/menuActions";
 import { basename } from "../../lib/path";
 import { useMetaStore } from "../../stores/metaStore";
 import { useTabsStore } from "../../stores/tabsStore";
@@ -147,7 +147,7 @@ function EmptyHint({ text }: { text: string }) {
 
 /**
  * 左侧导航栏：固定文件（可拖拽排序）+ 最近编辑（固定优先、去重、上限）。
- * 需求 §4.1 / §5.2。
+ * 需求 §4.1 / §5.2。侧边栏切换处理器在 AppShell 注册（本组件隐藏时会被卸载）。
  */
 export default function Sidebar({ width }: { width: number }) {
   const pinned = useMetaStore((s) => s.meta.pinned);
@@ -159,16 +159,6 @@ export default function Sidebar({ width }: { width: number }) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const focusTickRef = useRef(0);
   const [focusTick, setFocusTick] = useState(0);
-
-  // 菜单/快捷键：隐藏或恢复侧边栏（⌘⌥S）
-  useEffect(
-    () =>
-      registerMenuAction(MenuIds.toggleSidebar, () => {
-        const s = useMetaStore.getState();
-        s.setPrefs({ sidebarHidden: !s.meta.prefs.sidebarHidden });
-      }),
-    [],
-  );
 
   // 窗口获得焦点时刷新失效状态（文件可能在外部被移动/删除）
   useEffect(() => {

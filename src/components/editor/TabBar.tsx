@@ -1,5 +1,29 @@
-import { X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, X } from "lucide-react";
+import { t } from "../../i18n";
+import { useUiStore } from "../../lib/toast";
 import { useTabsStore } from "../../stores/tabsStore";
+
+/** ⌘S 保存成功后短暂显示"已保存"（需求 §8.5：保存状态的轻量明确反馈）。 */
+function SavedFlash() {
+  const savedAt = useUiStore((s) => s.savedAt);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (savedAt === 0) return;
+    setVisible(true);
+    const timer = setTimeout(() => setVisible(false), 1500);
+    return () => clearTimeout(timer);
+  }, [savedAt]);
+
+  if (!visible) return null;
+  return (
+    <span className="ml-auto flex shrink-0 items-center gap-1 pr-2 text-[11px] text-emerald-500">
+      <Check size={12} strokeWidth={2.5} />
+      {t("savedFlash")}
+    </span>
+  );
+}
 
 /** 多文件标签页（需求 §4.3：点击切换、关闭、脏状态标识）。 */
 export default function TabBar() {
@@ -48,6 +72,7 @@ export default function TabBar() {
           </div>
         );
       })}
+      <SavedFlash />
     </div>
   );
 }

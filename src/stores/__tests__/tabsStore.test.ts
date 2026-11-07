@@ -28,7 +28,6 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   save: (...args: unknown[]) => saveDialogMock(...args),
 }));
 
-import { ipc } from "../../lib/ipc";
 import { DEFAULT_META, type FileKind } from "../../types/state";
 import { useMetaStore } from "../metaStore";
 import { useTabsStore, type Tab } from "../tabsStore";
