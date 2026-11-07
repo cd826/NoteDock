@@ -8,13 +8,11 @@ import { useMetaStore } from "../stores/metaStore";
 import { useTabsStore } from "../stores/tabsStore";
 import { useUiStore } from "./toast";
 
-const FILE_FILTERS = [
-  { name: "Markdown / TXT / SQL", extensions: ["md", "markdown", "txt", "sql"] },
-];
-
 async function openViaDialog(): Promise<void> {
-  const path = await dialogOpen({ multiple: false, filters: FILE_FILTERS });
-  if (typeof path === "string") await useTabsStore.getState().openPath(path);
+  // 不传 filters：允许选择任意文件（不限扩展名），按文本尝试打开。
+  // 二进制内容由 Rust 侧 NUL 守卫明确拒绝（需求 §1.3 支持打开普通文本文件）。
+  const path = await dialogOpen({ multiple: false });
+  if (typeof path === "string" && path) await useTabsStore.getState().openPath(path);
 }
 
 function activeTogglePin(): void {
@@ -71,11 +69,10 @@ export function useFileActions(): void {
       void tabs().openPaths(e.payload),
     );
 
-    // 拖拽文件到窗口打开（需求 §6.2）
+    // 拖拽文件到窗口打开（需求 §6.2）：不限扩展名，二进制由读取守卫拒绝
     const unDragPromise = getCurrentWebview().onDragDropEvent(async (event) => {
       if (event.payload.type === "drop") {
-        const paths = event.payload.paths.filter((p) => /\.(md|markdown|txt|sql)$/i.test(p));
-        if (paths.length > 0) await tabs().openPaths(paths);
+        if (event.payload.paths.length > 0) await tabs().openPaths(event.payload.paths);
       }
     });
 
