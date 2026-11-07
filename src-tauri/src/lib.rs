@@ -1,3 +1,4 @@
+mod files;
 mod fsio;
 mod menu;
 mod state;
@@ -20,7 +21,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             state::load_app_state,
-            state::save_app_state
+            state::save_app_state,
+            files::read_text_file,
+            files::write_text_file,
+            files::stat_path,
+            files::create_text_file,
+            files::rename_file,
+            files::reveal_in_finder,
+            files::open_external,
+            files::get_documents_dir
         ])
         .setup(|app| {
             menu::build(app.handle())?;
@@ -30,6 +39,19 @@ pub fn run() {
         .on_menu_event(|app, event| {
             let _ = app.emit("menu-action", event.id().0.clone());
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            // Finder 双击文件 / 拖到 Dock 图标打开（需求 §6.2；文件关联在 Phase 5 配置）
+            if let tauri::RunEvent::Opened { urls } = event {
+                let paths: Vec<String> = urls
+                    .iter()
+                    .filter_map(|u| u.to_file_path().ok())
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect();
+                if !paths.is_empty() {
+                    let _ = _app_handle.emit("open-paths", paths);
+                }
+            }
+        });
 }

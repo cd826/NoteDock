@@ -11,12 +11,29 @@ const en: Record<keyof typeof zh, string> = {
   newTxt: "New TXT File",
   hideSidebar: "Hide Sidebar",
   showSidebar: "Show Sidebar",
+  clearRecent: "Clear",
+  showMore: "Show More",
+  showLess: "Collapse",
+  pinAction: "Pin",
+  unpinAction: "Unpin",
+  removeRecentAction: "Remove from Recent",
 
   editorEmptyTitle: "NoteDock",
   editorEmptyHint: "Open a file from the sidebar, or drop .md / .txt / .sql files to edit",
 
-  missingFile: "File has been moved or deleted",
-  externalChange: "File was modified externally",
+  conflictText: "File was modified by another app",
+  missingText: "File has been moved or deleted",
+  encodingNotice: "File encoding is {encoding}; it will be saved as UTF-8",
+  reload: "Reload",
+  overwrite: "Overwrite",
+  relocate: "Relocate…",
+  closeTabAction: "Close Tab",
+  missingOpenToast: "File does not exist or was deleted",
+  sessionMissingToast: "{count} previously opened files are missing and were skipped",
+
+  renameTitle: "Rename File",
+  renameConfirm: "Rename",
+  renameCancel: "Cancel",
 };
 
 export default en;

@@ -11,6 +11,12 @@ const current: keyof typeof dicts = navigator.language.toLowerCase().startsWith(
   ? "zh"
   : "en";
 
-export function t(key: I18nKey): string {
-  return dicts[current][key];
+export function t(key: I18nKey, params?: Record<string, string | number>): string {
+  let text: string = dicts[current][key];
+  if (params) {
+    for (const [name, value] of Object.entries(params)) {
+      text = text.replace(`{${name}}`, String(value));
+    }
+  }
+  return text;
 }

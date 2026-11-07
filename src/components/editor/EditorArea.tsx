@@ -2,10 +2,10 @@ import { PanelLeftOpen } from "lucide-react";
 import { t } from "../../i18n";
 import { dispatchMenuAction, MenuIds } from "../../lib/menuActions";
 import { useMetaStore } from "../../stores/metaStore";
+import EditorPane from "./EditorPane";
 
 /**
- * 右侧编辑区外壳。
- * Phase 1：空态占位；Phase 2 接入标签页与文件内容；Phase 3 接入 CodeMirror。
+ * 右侧编辑区外壳：标题栏拖拽区 + 编辑主面板（标签页/横幅/内容）。
  */
 export default function EditorArea() {
   const sidebarHidden = useMetaStore((s) => s.meta.prefs.sidebarHidden);
@@ -26,15 +26,7 @@ export default function EditorArea() {
           </button>
         )}
       </div>
-
-      <div className="flex flex-1 items-center justify-center px-6">
-        <div className="select-none text-center">
-          <h1 className="text-2xl font-semibold tracking-tight text-neutral-300 dark:text-neutral-600">
-            {t("editorEmptyTitle")}
-          </h1>
-          <p className="mt-2 text-sm text-neutral-400 dark:text-neutral-500">{t("editorEmptyHint")}</p>
-        </div>
-      </div>
+      <EditorPane />
     </main>
   );
 }
