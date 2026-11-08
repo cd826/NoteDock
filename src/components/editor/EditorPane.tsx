@@ -206,10 +206,11 @@ export default function EditorPane() {
       <TabBar />
       {tab?.conflict && <Banner tab={tab} />}
       {tab && tab.encoding !== "UTF-8" && <EncodingNotice encoding={tab.encoding} />}
-      <div className="relative flex min-h-0 flex-1 justify-center overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* 宿主容器始终挂载：EditorView 必须在首次渲染时就创建，
-            否则打开首个文件时 handles 为空、内容无法加载 */}
-        <div className={tab ? "flex min-h-0 w-full max-w-[800px] flex-col px-6" : "hidden"}>
+            否则打开首个文件时 handles 为空、内容无法加载。
+            滚动容器全宽（滚动条贴窗口右缘），内容居中限宽由 .cm-content 承担 */}
+        <div className={tab ? "flex min-h-0 w-full flex-col" : "hidden"}>
           <div ref={hostRef} className="min-h-0 flex-1" />
         </div>
         {!tab && (
