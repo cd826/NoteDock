@@ -31,6 +31,8 @@ pub fn run() {
             files::reveal_in_finder,
             files::open_external,
             files::get_documents_dir,
+            files::debug_log,
+            files::search_in_files,
             watch::set_watched_paths
         ])
         .setup(|app| {

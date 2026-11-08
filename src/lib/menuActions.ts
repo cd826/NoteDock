@@ -39,6 +39,8 @@ export const MenuIds = {
   replace: "replace",
   toggleSourceMode: "toggle-source-mode",
   toggleSidebar: "toggle-sidebar",
+  quickOpen: "quick-open",
+  globalSearch: "global-search",
   bold: "bold",
   italic: "italic",
   link: "link",

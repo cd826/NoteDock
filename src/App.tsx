@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import AppShell from "./components/layout/AppShell";
 import RenameDialog from "./components/common/RenameDialog";
+import SearchPalette from "./components/search/SearchPalette";
 import Toast from "./components/common/Toast";
 import { initFsWatcher } from "./lib/watcher";
 import { useFileActions } from "./lib/useFileActions";
@@ -70,6 +71,7 @@ export default function App() {
   return (
     <>
       <AppShell />
+      <SearchPalette />
       <RenameDialog />
       <Toast />
     </>

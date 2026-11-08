@@ -38,6 +38,8 @@ export function useFileActions(): void {
 
     const unsubs = [
       registerMenuAction(MenuIds.openFile, () => void openViaDialog()),
+      registerMenuAction(MenuIds.quickOpen, () => ui().openPalette("quick")),
+      registerMenuAction(MenuIds.globalSearch, () => ui().openPalette("global")),
       registerMenuAction(MenuIds.newMd, () => void tabs().newFile("md")),
       registerMenuAction(MenuIds.newTxt, () => void tabs().newFile("txt")),
       registerMenuAction(MenuIds.save, () => void tabs().saveActive()),

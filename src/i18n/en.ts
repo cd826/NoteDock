@@ -32,6 +32,12 @@ const en: Record<keyof typeof zh, string> = {
   missingOpenToast: "File does not exist or was deleted",
   sessionMissingToast: "{count} previously opened files are missing and were skipped",
 
+  quickOpenPlaceholder: "Search file names (pinned + recent)…",
+  globalSearchPlaceholder: "Search file names & contents (pinned + recent)…",
+  searchNoResults: "No matches",
+  searching: "Searching…",
+  largeFileNotice: "Large file ({size} MB), editing may be slow",
+
   renameTitle: "Rename File",
   renameConfirm: "Rename",
   renameCancel: "Cancel",

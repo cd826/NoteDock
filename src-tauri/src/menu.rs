@@ -21,6 +21,8 @@ pub const ID_REDO: &str = "redo";
 pub const ID_FIND: &str = "find";
 pub const ID_REPLACE: &str = "replace";
 pub const ID_TOGGLE_SOURCE_MODE: &str = "toggle-source-mode";
+pub const ID_QUICK_OPEN: &str = "quick-open";
+pub const ID_GLOBAL_SEARCH: &str = "global-search";
 pub const ID_BOLD: &str = "bold";
 pub const ID_ITALIC: &str = "italic";
 pub const ID_LINK: &str = "link";
@@ -68,6 +70,9 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .item(&item(app, ID_NEW_TXT, "新建 TXT 文件", "New TXT File", "CmdOrCtrl+Shift+N")?)
         .separator()
         .item(&item(app, ID_OPEN_FILE, "打开文件…", "Open File…", "CmdOrCtrl+O")?)
+        .separator()
+        .item(&item(app, ID_QUICK_OPEN, "快速打开文件…", "Quick Open File…", "CmdOrCtrl+P")?)
+        .item(&item(app, ID_GLOBAL_SEARCH, "全局搜索…", "Search in Files…", "CmdOrCtrl+Shift+F")?)
         .separator()
         .item(&item(app, ID_SAVE, "保存", "Save", "CmdOrCtrl+S")?)
         .item(&item(app, ID_SAVE_AS, "另存为…", "Save As…", "CmdOrCtrl+Shift+S")?)

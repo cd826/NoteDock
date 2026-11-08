@@ -33,6 +33,13 @@ const zh = {
   missingOpenToast: "文件不存在或已被删除",
   sessionMissingToast: "{count} 个上次打开的文件已失效，已跳过",
 
+  // 搜索面板
+  quickOpenPlaceholder: "搜索文件名（固定 + 最近）…",
+  globalSearchPlaceholder: "搜索文件名与内容（固定 + 最近）…",
+  searchNoResults: "无匹配结果",
+  searching: "搜索中…",
+  largeFileNotice: "大文件（{size} MB），编辑可能变慢",
+
   // 重命名
   renameTitle: "重命名文件",
   renameConfirm: "重命名",
