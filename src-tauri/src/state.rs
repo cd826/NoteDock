@@ -118,7 +118,9 @@ fn state_file(app: &AppHandle) -> Result<PathBuf, String> {
 /// 读取元数据。
 /// - 文件不存在：首次启动，返回默认值（允许后续正常持久化）；
 /// - 文件存在但损坏/读取失败：返回 Err——前端据此进入"只读保护"，
-///   绝不用默认值回写覆盖磁盘上的既有数据。
+///   绝不用默认值回写覆盖磁盘上的既有数据；
+/// - 文件由更高版本应用写入（version 更大）：同样进入只读保护，
+///   避免旧版本解析（未知字段被忽略）后回写剥离新版本数据。
 #[tauri::command]
 pub fn load_app_state(app: AppHandle) -> Result<AppMeta, String> {
     let file = state_file(&app)?;
@@ -127,7 +129,15 @@ pub fn load_app_state(app: AppHandle) -> Result<AppMeta, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(AppMeta::default()),
         Err(e) => return Err(format!("读取元数据失败: {e}")),
     };
-    serde_json::from_slice::<AppMeta>(&bytes).map_err(|e| format!("元数据解析失败: {e}"))
+    let meta: AppMeta =
+        serde_json::from_slice(&bytes).map_err(|e| format!("元数据解析失败: {e}"))?;
+    if meta.version > CURRENT_VERSION {
+        return Err(format!(
+            "元数据版本较新（v{} > v{}），已进入只读保护；请升级应用后再使用",
+            meta.version, CURRENT_VERSION
+        ));
+    }
+    Ok(meta)
 }
 
 /// 保存元数据（原子写）。由前端防抖调用。
@@ -183,5 +193,15 @@ mod tests {
         assert_eq!(meta.prefs.sidebar_width, 240.0);
         assert_eq!(meta.version, CURRENT_VERSION);
         assert_eq!(meta.pinned.len(), 1);
+    }
+
+    #[test]
+    fn newer_version_enters_readonly_protection() {
+        // 升级安全：更高版本写入的元数据被旧版本读取时拒绝（前端进入只读保护），
+        // 不允许旧版本回写剥离新版本字段
+        let newer = r#"{"version":2,"futureField":true,"pinned":[]}"#;
+        let meta: AppMeta = serde_json::from_str(newer).unwrap();
+        assert_eq!(meta.version, 2);
+        assert!(meta.version > CURRENT_VERSION);
     }
 }
