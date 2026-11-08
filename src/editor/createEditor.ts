@@ -119,6 +119,12 @@ export interface EditorHandles {
   kindComp: Compartment;
   /** 源码模式开关（livePreviewFacet）。 */
   srcComp: Compartment;
+  /**
+   * 构建全新 EditorState。切换标签页必须用它整体重建状态：
+   * 撤销历史随标签页隔离——若用 dispatch 换文档，"换文档"本身会进入
+   * 撤销栈，⌘Z 会把别的文件内容撤回来（跨文件串内容 bug）。
+   */
+  makeState(doc: string, kind: "md" | "txt" | "sql", sourceMode: boolean, cursor?: number): EditorState;
 }
 
 /** 创建 EditorView 实例（文档内容经 tabsStore 双向同步）。 */
@@ -126,28 +132,36 @@ export function createEditor(options: CreateEditorOptions): EditorHandles {
   const { parent, kind, doc, cursor = 0, onUpdate } = options;
   const kindComp = new Compartment();
   const srcComp = new Compartment();
-  const view = new EditorView({
-    state: EditorState.create({
-      doc,
-      selection: { anchor: Math.min(cursor, doc.length) },
+  const updateExt = EditorView.updateListener.of((update) => {
+    if (update.docChanged || update.selectionSet) {
+      onUpdate({
+        docChanged: update.docChanged,
+        selectionChanged: update.selectionSet,
+        doc: update.state.doc.toString(),
+        cursor: update.state.selection.main.head,
+        view: update.view,
+      });
+    }
+  });
+  const makeState = (
+    stateDoc: string,
+    stateKind: "md" | "txt" | "sql",
+    sourceMode: boolean,
+    stateCursor = 0,
+  ): EditorState =>
+    EditorState.create({
+      doc: stateDoc,
+      selection: { anchor: Math.min(stateCursor, stateDoc.length) },
       extensions: [
         ...baseExtensions(),
-        kindComp.of(kindExtensions(kind)),
-        srcComp.of(livePreviewFacet.of(true)),
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged || update.selectionSet) {
-            onUpdate({
-              docChanged: update.docChanged,
-              selectionChanged: update.selectionSet,
-              doc: update.state.doc.toString(),
-              cursor: update.state.selection.main.head,
-              view: update.view,
-            });
-          }
-        }),
+        kindComp.of(kindExtensions(stateKind)),
+        srcComp.of(livePreviewFacet.of(!sourceMode)),
+        updateExt,
       ],
-    }),
+    });
+  const view = new EditorView({
+    state: makeState(doc, kind, false, cursor),
     parent,
   });
-  return { view, kindComp, srcComp };
+  return { view, kindComp, srcComp, makeState };
 }

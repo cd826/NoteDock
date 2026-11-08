@@ -135,34 +135,10 @@ function showToast(message: string): void {
 const inflightOpens = new Map<string, Promise<boolean>>();
 let restoreStarted = false;
 
-// —— 自动保存（需求 §5.3）：内容变更后 800ms 防抖写盘 ——
-const AUTOSAVE_DELAY_MS = 800;
-const autosaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-function scheduleAutosave(id: string): void {
-  const existing = autosaveTimers.get(id);
-  if (existing) clearTimeout(existing);
-  autosaveTimers.set(
-    id,
-    setTimeout(() => {
-      autosaveTimers.delete(id);
-      const s = useTabsStore.getState();
-      const tab = s.tabs.find((t) => t.id === id);
-      // 冲突未解决时不自动重试（等用户选择重新加载/覆盖/另存为）
-      if (tab?.dirty && !tab.conflict) void s.save(id);
-    }, AUTOSAVE_DELAY_MS),
-  );
-}
-
-function cancelAutosave(id: string): void {
-  const timer = autosaveTimers.get(id);
-  if (timer) {
-    clearTimeout(timer);
-    autosaveTimers.delete(id);
-  }
-}
-
-/** 立即保存所有有未保存内容的标签页（窗口失焦/关闭/退出前 flush）+ 元数据。 */
+/**
+ * 保存策略（按用户决策：手动保存优先，⌘S 写盘；不做空闲自动保存）。
+ * 防丢失底线：关闭标签页 / 关闭窗口 / 退出应用前，把未保存内容写盘。
+ */
 export async function flushAllDirty(): Promise<void> {
   const s = useTabsStore.getState();
   for (const tab of s.tabs) {
@@ -216,7 +192,6 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   },
 
   save: async (id, opts) => {
-    cancelAutosave(id);
     const tab = findTab(id);
     if (!tab) return false;
     try {
@@ -278,7 +253,6 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   },
 
   closeTab: async (id) => {
-    cancelAutosave(id);
     const tab = findTab(id);
     if (!tab) return;
     if (tab.dirty) {
@@ -304,11 +278,7 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   },
 
   setActive: async (id) => {
-    const prev = activeTab();
-    if (prev && prev.id !== id && prev.dirty && prev.conflict !== "missing") {
-      // 切换前自动保存（失败不阻断切换，返回时仍显示横幅/脏标记）
-      await get().save(prev.id);
-    }
+    // 手动保存策略：切换不写盘，未保存内容保留在内存中（脏标记仍在）
     set({ activeId: id });
   },
 
@@ -327,7 +297,6 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
       return;
     }
     patchTab(id, { content, dirty: true, cursor: cursor ?? tab.cursor });
-    scheduleAutosave(id);
   },
 
   setTabConflict: (id, conflict) => {
@@ -411,11 +380,6 @@ async function doOpenPath(path: string, opts?: OpenOptions): Promise<boolean> {
   if (existing) {
     await get().setActive(existing.id);
     return true;
-  }
-  // 焦点即将转移到新标签页：先保存当前脏标签页（需求 §4.3 切换时自动保存）
-  const prev = get().tabs.find((t) => t.id === get().activeId);
-  if (prev?.dirty && prev.conflict !== "missing") {
-    await get().save(prev.id);
   }
   try {
     const info = await ipc.readTextFile(path);

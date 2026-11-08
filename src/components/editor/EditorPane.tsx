@@ -4,8 +4,7 @@ import { openSearchPanel } from "@codemirror/search";
 import { t } from "../../i18n";
 import { MenuIds, registerMenuAction } from "../../lib/menuActions";
 import { useTabsStore, type Tab } from "../../stores/tabsStore";
-import { createEditor, kindExtensions, type EditorHandles } from "../../editor/createEditor";
-import { livePreviewFacet } from "../../editor/livePreview";
+import { createEditor, type EditorHandles } from "../../editor/createEditor";
 import TabBar from "./TabBar";
 
 /** 冲突/缺失横幅（需求 §6.4：不静默覆盖，明确提示并提供恢复路径）。 */
@@ -68,6 +67,8 @@ export default function EditorPane() {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const handlesRef = useRef<EditorHandles | null>(null);
   const activeTabIdRef = useRef<string | null>(null);
+  /** 编辑器视图当前持有的文档内容（区分编辑器输入 vs 外部重载）。 */
+  const lastEditorDocRef = useRef<string>("");
 
   activeTabIdRef.current = activeId;
 
@@ -82,6 +83,7 @@ export default function EditorPane() {
         const id = activeTabIdRef.current;
         if (!id) return;
         if (docChanged) {
+          lastEditorDocRef.current = doc;
           useTabsStore.getState().updateContent(id, doc, cursor);
         } else {
           useTabsStore.getState().setEditorState(id, { cursor });
@@ -140,26 +142,41 @@ export default function EditorPane() {
     if (!handles || !tabId) return;
     const currentTab = useTabsStore.getState().tabs.find((x) => x.id === tabId);
     if (!currentTab) return;
-    handles.view.dispatch({
-      effects: [
-        handles.kindComp.reconfigure(kindExtensions(currentTab.kind)),
-        handles.srcComp.reconfigure(livePreviewFacet.of(!currentTab.sourceMode)),
-      ],
-    });
-    if (handles.view.state.doc.toString() !== currentTab.content) {
-      // 外部变更（打开新文件 / 从磁盘重载）：整体替换文档并恢复光标
-      const cursor = Math.min(currentTab.cursor, currentTab.content.length);
-      handles.view.dispatch({
-        changes: { from: 0, to: handles.view.state.doc.length, insert: currentTab.content },
-        selection: { anchor: cursor },
-        scrollIntoView: true,
-      });
-    }
+    // setState 整体重建：撤销历史随标签页隔离（修复 ⌘Z 串文件内容），
+    // 同时应用文件类型与源码模式
+    handles.view.setState(
+      handles.makeState(
+        currentTab.content,
+        currentTab.kind,
+        currentTab.sourceMode,
+        currentTab.cursor,
+      ),
+    );
+    lastEditorDocRef.current = currentTab.content;
     const raf = requestAnimationFrame(() => {
       handles.view.scrollDOM.scrollTop = currentTab.scrollTop;
     });
     return () => cancelAnimationFrame(raf);
   }, [tabId, tabKind, tabSourceMode, tabConflict]);
+
+  // —— 外部内容变更（磁盘重载/冲突重新加载）→ 同步进视图 ——
+  useEffect(() => {
+    const handles = handlesRef.current;
+    if (!handles || !tab) return;
+    const view = handles.view;
+    if (
+      view.state.doc.toString() !== tab.content &&
+      lastEditorDocRef.current !== tab.content
+    ) {
+      const len = tab.content.length;
+      const sel = view.state.selection.main;
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: tab.content },
+        selection: { anchor: Math.min(sel.anchor, len), head: Math.min(sel.head, len) },
+      });
+      lastEditorDocRef.current = tab.content;
+    }
+  }, [tab?.content, tab?.id]);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">

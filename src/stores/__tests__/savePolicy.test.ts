@@ -37,7 +37,12 @@ function activeTab() {
   return s.tabs.find((t) => t.id === s.activeId);
 }
 
-describe("自动保存（需求 §5.3）", () => {
+/**
+ * 保存策略（用户决策 2026-11-08）：手动保存优先（⌘S 写盘），
+ * 不做空闲自动保存、不做切标签页写盘；
+ * 防丢失底线：关闭标签页 / 关闭窗口 / 退出应用前落盘。
+ */
+describe("保存策略：手动优先", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
@@ -45,59 +50,66 @@ describe("自动保存（需求 §5.3）", () => {
     useTabsStore.setState({ tabs: [], activeId: null });
   });
 
-  it("内容变更后 ~800ms 自动写盘", async () => {
+  it("输入后不自动写盘（等 ⌘S）", async () => {
     readTextFileMock.mockResolvedValue(fileInfo("/a.md", "old"));
     await useTabsStore.getState().openPath("/a.md");
-    const id = activeTab()!.id;
-    useTabsStore.getState().updateContent(id, "new content");
-    writeTextFileMock.mockResolvedValue({ mtime: 2000 });
+    useTabsStore.getState().updateContent(activeTab()!.id, "typed content");
 
+    await vi.advanceTimersByTimeAsync(5000);
     expect(writeTextFileMock).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(900);
-    expect(writeTextFileMock).toHaveBeenCalledTimes(1);
-    expect(writeTextFileMock.mock.calls[0][0]).toMatchObject({ content: "new content" });
-    expect(activeTab()?.dirty).toBe(false);
+    expect(activeTab()?.dirty).toBe(true);
   });
 
-  it("连续输入只触发一次保存（防抖）", async () => {
+  it("⌘S（saveActive）写盘并清除脏标记", async () => {
     readTextFileMock.mockResolvedValue(fileInfo("/a.md", "old"));
     await useTabsStore.getState().openPath("/a.md");
     const id = activeTab()!.id;
+    useTabsStore.getState().updateContent(id, "manual content");
     writeTextFileMock.mockResolvedValue({ mtime: 2000 });
 
-    useTabsStore.getState().updateContent(id, "v1");
-    await vi.advanceTimersByTimeAsync(300);
-    useTabsStore.getState().updateContent(id, "v2");
-    await vi.advanceTimersByTimeAsync(300);
-    useTabsStore.getState().updateContent(id, "v3");
-    await vi.advanceTimersByTimeAsync(900);
+    await useTabsStore.getState().saveActive();
     expect(writeTextFileMock).toHaveBeenCalledTimes(1);
-    expect(writeTextFileMock.mock.calls[0][0].content).toBe("v3");
+    expect(activeTab()?.dirty).toBe(false);
+    expect(activeTab()?.mtime).toBe(2000);
   });
 
-  it("冲突未解决时自动保存不重试", async () => {
-    readTextFileMock.mockResolvedValue(fileInfo("/a.md", "old", 1000));
-    await useTabsStore.getState().openPath("/a.md");
-    const id = activeTab()!.id;
-    useTabsStore.getState().updateContent(id, "local edit");
-    writeTextFileMock.mockRejectedValue(JSON.stringify({ kind: "external-change", currentMtime: 9999 }));
-
-    await vi.advanceTimersByTimeAsync(900);
-    expect(activeTab()?.conflict).toBe("external-change");
-
-    useTabsStore.getState().updateContent(id, "more edits");
-    await vi.advanceTimersByTimeAsync(900);
-    // 冲突期间不再尝试写盘
-    expect(writeTextFileMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("flushAllDirty 立即保存全部脏标签页", async () => {
+  it("切换标签页不写盘，未保存内容保留在内存", async () => {
     readTextFileMock
       .mockResolvedValueOnce(fileInfo("/a.md", "A"))
       .mockResolvedValueOnce(fileInfo("/b.md", "B"));
     const s = useTabsStore.getState();
     await s.openPath("/a.md");
+    const aId = activeTab()!.id;
+    s.updateContent(aId, "A2 unsaved");
     await s.openPath("/b.md");
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(writeTextFileMock).not.toHaveBeenCalled();
+
+    // 切回 a：未保存内容还在
+    await s.setActive(useTabsStore.getState().tabs.find((t) => t.path === "/a.md")!.id);
+    expect(activeTab()?.content).toBe("A2 unsaved");
+    expect(activeTab()?.dirty).toBe(true);
+  });
+
+  it("关闭脏标签页前落盘（防丢失底线）", async () => {
+    readTextFileMock.mockResolvedValue(fileInfo("/a.md", "A"));
+    await useTabsStore.getState().openPath("/a.md");
+    const id = activeTab()!.id;
+    useTabsStore.getState().updateContent(id, "closing content");
+    writeTextFileMock.mockResolvedValue({ mtime: 4000 });
+
+    await useTabsStore.getState().closeTab(id);
+    expect(writeTextFileMock).toHaveBeenCalledTimes(1);
+    expect(useTabsStore.getState().tabs).toHaveLength(0);
+  });
+
+  it("flushAllDirty（退出/关窗前）落盘全部脏标签页", async () => {
+    readTextFileMock
+      .mockResolvedValueOnce(fileInfo("/a.md", "A"))
+      .mockResolvedValueOnce(fileInfo("/b.md", "B"));
+    await useTabsStore.getState().openPath("/a.md");
+    await useTabsStore.getState().openPath("/b.md");
     writeTextFileMock.mockResolvedValue({ mtime: 3000 });
     useTabsStore.getState().tabs.forEach((t) =>
       useTabsStore.getState().updateContent(t.id, `${t.title}!`),

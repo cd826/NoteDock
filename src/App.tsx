@@ -41,15 +41,11 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // —— 可靠性（需求 §5.3、§6.4）：文件监听 + 保存 flush ——
+  // —— 可靠性（§6.4）：文件监听 + 退出前落盘（手动保存策略：不自动写盘，仅防丢失）——
   useEffect(() => {
     const unwatch = initFsWatcher();
 
-    // 窗口失焦：flush 所有未保存内容
-    const onBlur = () => void flushAllDirty();
-    window.addEventListener("blur", onBlur);
-
-    // 窗口关闭/退出：先落盘再放行关闭
+    // 窗口关闭/退出：未保存内容先落盘再放行关闭
     const unClose = getCurrentWindow().onCloseRequested(async () => {
       await flushAllDirty();
       await flushMeta();
@@ -57,7 +53,6 @@ export default function App() {
 
     return () => {
       unwatch();
-      onBlur && window.removeEventListener("blur", onBlur);
       void unClose.then((f) => f());
     };
   }, []);

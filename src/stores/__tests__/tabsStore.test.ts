@@ -109,7 +109,7 @@ describe("tabsStore", () => {
     expect(tab.dirty).toBe(true);
   });
 
-  it("切换标签页时自动保存上一个", async () => {
+  it("切换标签页不写盘（手动保存策略），内容保留在内存", async () => {
     readTextFileMock
       .mockResolvedValueOnce(fileInfo("/a.md", "A", 1000))
       .mockResolvedValueOnce(fileInfo("/b.md", "B", 1000));
@@ -118,8 +118,11 @@ describe("tabsStore", () => {
     const aId = activeTab()!.id;
     s.updateContent(aId, "A2");
     await s.openPath("/b.md");
-    expect(writeTextFileMock).toHaveBeenCalled();
+    expect(writeTextFileMock).not.toHaveBeenCalled();
     expect(activeTab()?.path).toBe("/b.md");
+    // 切回 a：未保存内容仍在
+    await s.setActive(useTabsStore.getState().tabs.find((t) => t.path === "/a.md")!.id);
+    expect(activeTab()?.content).toBe("A2");
   });
 
   it("关闭脏标签页先保存；保存失败保留标签页", async () => {
