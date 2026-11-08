@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const readTextFileMock = vi.fn();
 const writeTextFileMock = vi.fn();
 const saveDialogMock = vi.fn();
+const askDialogMock = vi.fn((..._args: unknown[]) => Promise.resolve(false));
 
 vi.mock("../../lib/ipc", async () => {
   const state = await import("../../types/state");
@@ -26,11 +27,13 @@ vi.mock("../../lib/ipc", async () => {
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
   save: (...args: unknown[]) => saveDialogMock(...args),
+  ask: (...args: unknown[]) => askDialogMock(...args),
 }));
 
 import { DEFAULT_META, type FileKind } from "../../types/state";
+import { defaultNameFor } from "../../lib/path";
 import { useMetaStore } from "../metaStore";
-import { useTabsStore, type Tab } from "../tabsStore";
+import { flushAllDirty, useTabsStore, type Tab } from "../tabsStore";
 
 function fileInfo(path: string, content: string, mtime = 1000) {
   const kind: FileKind = path.endsWith(".sql") ? "sql" : path.endsWith(".txt") ? "txt" : "md";
@@ -178,5 +181,126 @@ describe("tabsStore", () => {
     expect(s.tabs.map((t) => t.path)).toEqual(["/live.md"]);
     expect(s.activeId).toBe(s.tabs[0]?.id ?? null);
     expect(s.tabs[0]?.scrollTop).toBe(40);
+  });
+});
+
+/**
+ * 新建文件流程（用户决策 2026-11-08）：⌘N 直接开未命名草稿，
+ * 首次 ⌘S 才选择保存位置；临时记录可随手丢弃（关闭时一次确认）。
+ */
+describe("新建草稿流程", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    askDialogMock.mockResolvedValue(false);
+    useMetaStore.setState({ hydrated: true, meta: structuredClone(DEFAULT_META) });
+    useTabsStore.setState({ tabs: [], activeId: null });
+  });
+
+  it("newFile 直接开草稿：不弹保存对话框、不落盘、不进最近列表", async () => {
+    await useTabsStore.getState().newFile("md");
+    const tab = activeTab();
+    expect(tab?.path).toBeNull();
+    expect(tab?.title).toBe(defaultNameFor("md"));
+    expect(tab?.dirty).toBe(false);
+    expect(saveDialogMock).not.toHaveBeenCalled();
+    expect(useMetaStore.getState().meta.recents).toHaveLength(0);
+  });
+
+  it("同屏多个草稿自动编号（Untitled.md / Untitled 2.md）", async () => {
+    await useTabsStore.getState().newFile("md");
+    await useTabsStore.getState().newFile("md");
+    expect(useTabsStore.getState().tabs.map((t) => t.title)).toEqual([
+      defaultNameFor("md"),
+      defaultNameFor("md").replace(".md", " 2.md"),
+    ]);
+  });
+
+  it("草稿首次 ⌘S：选择位置 → 写盘 → 变普通文件并记入最近", async () => {
+    await useTabsStore.getState().newFile("md");
+    const id = activeTab()!.id;
+    useTabsStore.getState().updateContent(id, "# draft");
+    saveDialogMock.mockResolvedValue("/saved/draft1.md");
+    writeTextFileMock.mockResolvedValue({ mtime: 5000 });
+
+    const ok = await useTabsStore.getState().save(id);
+    expect(ok).toBe(true);
+    expect(saveDialogMock).toHaveBeenCalledTimes(1);
+    // 默认保存位置：文稿目录 + 当前草稿名
+    expect(saveDialogMock.mock.calls[0][0]).toMatchObject({
+      defaultPath: `/tmp/docs/${defaultNameFor("md")}`,
+    });
+    expect(writeTextFileMock.mock.calls[0][0]).toMatchObject({
+      path: "/saved/draft1.md",
+      content: "# draft",
+    });
+    const tab = activeTab()!;
+    expect(tab.path).toBe("/saved/draft1.md");
+    expect(tab.title).toBe("draft1.md");
+    expect(tab.dirty).toBe(false);
+    expect(useMetaStore.getState().meta.recents[0]?.path).toBe("/saved/draft1.md");
+  });
+
+  it("草稿 ⌘S 取消对话框：仍是草稿，内容与脏标记保留", async () => {
+    await useTabsStore.getState().newFile("md");
+    const id = activeTab()!.id;
+    useTabsStore.getState().updateContent(id, "keep me");
+    saveDialogMock.mockResolvedValue(null);
+
+    const ok = await useTabsStore.getState().save(id);
+    expect(ok).toBe(false);
+    const tab = activeTab()!;
+    expect(tab.path).toBeNull();
+    expect(tab.dirty).toBe(true);
+    expect(tab.content).toBe("keep me");
+  });
+
+  it("关闭脏草稿：确认丢弃后关闭；取消则保留（不写盘）", async () => {
+    await useTabsStore.getState().newFile("md");
+    const id = activeTab()!.id;
+    useTabsStore.getState().updateContent(id, "temp note");
+
+    // 取消丢弃 → 标签页保留
+    await useTabsStore.getState().closeTab(id);
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+    expect(writeTextFileMock).not.toHaveBeenCalled();
+
+    // 确认丢弃 → 关闭且不落盘
+    askDialogMock.mockResolvedValue(true);
+    await useTabsStore.getState().closeTab(id);
+    expect(useTabsStore.getState().tabs).toHaveLength(0);
+    expect(writeTextFileMock).not.toHaveBeenCalled();
+  });
+
+  it("空白草稿关闭无需确认（随手丢弃临时记录）", async () => {
+    await useTabsStore.getState().newFile("md");
+    const id = activeTab()!.id;
+    useTabsStore.getState().updateContent(id, "   ");
+    await useTabsStore.getState().closeTab(id);
+    expect(askDialogMock).not.toHaveBeenCalled();
+    expect(useTabsStore.getState().tabs).toHaveLength(0);
+  });
+
+  it("flushAllDirty 跳过草稿（退出不弹对话框、不写盘）", async () => {
+    readTextFileMock.mockResolvedValue(fileInfo("/a.md", "A"));
+    await useTabsStore.getState().openPath("/a.md");
+    await useTabsStore.getState().newFile("md");
+    const draftId = activeTab()!.id;
+    useTabsStore.getState().updateContent(draftId, "draft!");
+    const savedId = useTabsStore.getState().tabs.find((t) => t.path === "/a.md")!.id;
+    useTabsStore.getState().updateContent(savedId, "saved file!");
+    writeTextFileMock.mockResolvedValue({ mtime: 6000 });
+
+    await flushAllDirty();
+    // 只有普通文件写盘；草稿保持脏状态由退出确认流程处置
+    expect(writeTextFileMock).toHaveBeenCalledTimes(1);
+    expect(writeTextFileMock.mock.calls[0][0].path).toBe("/a.md");
+    expect(useTabsStore.getState().tabs.find((t) => t.id === draftId)?.dirty).toBe(true);
+  });
+
+  it("会话持久化排除草稿（正文不入元数据）", async () => {
+    readTextFileMock.mockResolvedValue(fileInfo("/a.md", "A"));
+    await useTabsStore.getState().openPath("/a.md");
+    await useTabsStore.getState().newFile("md");
+    expect(useMetaStore.getState().meta.session.tabs.map((x) => x.path)).toEqual(["/a.md"]);
   });
 });

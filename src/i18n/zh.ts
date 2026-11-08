@@ -44,6 +44,13 @@ const zh = {
   renameTitle: "重命名文件",
   renameConfirm: "重命名",
   renameCancel: "取消",
+
+  // 新建草稿（先编辑，首次保存时才选位置）
+  draftNotSavedToast: "草稿尚未保存到磁盘，请先 ⌘S 保存",
+  discardDraftPrompt: "草稿「{title}」尚未保存，关闭后将丢失。",
+  discardDraft: "丢弃草稿",
+  quitDraftPrompt: "有 {count} 个未保存的草稿，退出后将丢失。",
+  cancelLabel: "取消",
 } as const;
 
 export type I18nKey = keyof typeof zh;

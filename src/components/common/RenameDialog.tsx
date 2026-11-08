@@ -34,7 +34,8 @@ export default function RenameDialog() {
 
   const confirm = async () => {
     const trimmed = name.trim();
-    if (!trimmed || trimmed === current.title) {
+    // path 为 null 的草稿不进本对话框（动作层已改走首次保存），防御性兜底
+    if (!trimmed || trimmed === current.title || current.path === null) {
       close();
       return;
     }

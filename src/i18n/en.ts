@@ -41,6 +41,12 @@ const en: Record<keyof typeof zh, string> = {
   renameTitle: "Rename File",
   renameConfirm: "Rename",
   renameCancel: "Cancel",
+
+  draftNotSavedToast: "Draft not on disk yet — press ⌘S to save first",
+  discardDraftPrompt: "The draft “{title}” isn't saved and will be lost if closed.",
+  discardDraft: "Discard Draft",
+  quitDraftPrompt: "{count} unsaved draft(s) will be lost if you quit.",
+  cancelLabel: "Cancel",
 };
 
 export default en;

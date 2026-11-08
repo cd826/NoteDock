@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { EditorState } from "@codemirror/state";
-import { save as dialogSave } from "@tauri-apps/plugin-dialog";
+import { ask, save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { ipc } from "../lib/ipc";
 import { flushMeta } from "./metaStore";
 import { parseFsError } from "../lib/fsError";
@@ -22,7 +22,8 @@ export type ConflictKind = "external-change" | "missing";
 
 export interface Tab {
   id: string;
-  path: string;
+  /** 磁盘路径；null = 新建草稿（未落盘，首次 ⌘S 时才选择保存位置）。 */
+  path: string | null;
   title: string;
   kind: FileKind;
   content: string;
@@ -108,14 +109,15 @@ function activeTab(): Tab | undefined {
   return s.tabs.find((t) => t.id === s.activeId);
 }
 
-/** 当前会话快照 → metaStore（防抖落盘）。 */
+/** 当前会话快照 → metaStore（防抖落盘）。草稿（未落盘）不进会话：正文不入元数据。 */
 function persistSession(): void {
   syncWatchedPaths();
   const s = useTabsStore.getState();
-  const active = s.tabs.findIndex((t) => t.id === s.activeId);
+  const saved = s.tabs.filter((t) => t.path !== null);
+  const active = saved.findIndex((t) => t.id === s.activeId);
   useMetaStore.getState().setSession({
-    tabs: s.tabs.map((t) => ({
-      path: t.path,
+    tabs: saved.map((t) => ({
+      path: t.path as string,
       kind: t.kind,
       cursor: t.cursor,
       scrollTop: t.scrollTop,
@@ -160,11 +162,12 @@ function dropEditorState(id: string): void {
 /**
  * 保存策略（按用户决策：手动保存优先，⌘S 写盘；不做空闲自动保存）。
  * 防丢失底线：关闭标签页 / 关闭窗口 / 退出应用前，把未保存内容写盘。
+ * 草稿（未选位置的新建文件）无法静默写盘，由关闭/退出流程单独确认丢弃。
  */
 export async function flushAllDirty(): Promise<void> {
   const s = useTabsStore.getState();
   for (const tab of s.tabs) {
-    if (tab.dirty && !tab.conflict) await s.save(tab.id);
+    if (tab.dirty && tab.path !== null && !tab.conflict) await s.save(tab.id);
   }
   await flushMeta();
 }
@@ -178,6 +181,32 @@ async function defaultSaveDir(): Promise<string | undefined> {
     cachedDocsDir = await ipc.getDocumentsDir().catch(() => null);
   }
   return cachedDocsDir ?? undefined;
+}
+
+/** 草稿标题：未命名.md / 未命名 2.md（同屏多个草稿时编号，跟随系统语言）。 */
+function nextDraftTitle(kind: FileKind): string {
+  const base = defaultNameFor(kind);
+  const dot = base.lastIndexOf(".");
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  const ext = dot > 0 ? base.slice(dot) : "";
+  const taken = new Set(
+    useTabsStore.getState()
+      .tabs.filter((t) => t.path === null)
+      .map((t) => t.title),
+  );
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${stem} ${n}${ext}`)) n += 1;
+  return `${stem} ${n}${ext}`;
+}
+
+/** 新建草稿确认丢弃（关闭脏草稿/退出时防误丢，一次点击即放弃）。 */
+async function confirmDiscardDraft(message: string): Promise<boolean> {
+  return ask(message, {
+    title: "NoteDock",
+    okLabel: t("discardDraft"),
+    cancelLabel: t("cancelLabel"),
+  });
 }
 
 export const useTabsStore = create<TabsStore>((set, get) => ({
@@ -197,25 +226,33 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   },
 
   newFile: async (kind) => {
-    // 需求 §6.5：先确定保存位置，再建立文件并进入编辑
-    const dir = await defaultSaveDir();
-    const name = defaultNameFor(kind);
-    const defaultPath = dir ? `${dir.replace(/\/$/, "")}/${name}` : name;
-    const path = await dialogSave({ defaultPath, filters: FILE_FILTERS });
-    if (!path) return;
-    try {
-      await ipc.createTextFile(path);
-    } catch (raw) {
-      const err = parseFsError(raw);
-      showToast(err.kind === "already-exists" ? "文件已存在" : err.kind === "io" ? err.message : "创建文件失败");
-      return;
-    }
-    await get().openPath(path);
+    // 新建流程（按用户决策 2026-11-08）：先开草稿直接编辑，首次 ⌘S 时才选择保存位置。
+    // 临时记录无需落盘，关闭时确认丢弃即可。
+    const tab: Tab = {
+      id: crypto.randomUUID(),
+      path: null,
+      title: nextDraftTitle(kind),
+      kind,
+      content: "",
+      dirty: false,
+      mtime: null,
+      encoding: "UTF-8",
+      hasBom: false,
+      conflict: null,
+      cursor: 0,
+      scrollTop: 0,
+      sourceMode: false,
+    };
+    set((s) => ({ tabs: [...s.tabs, tab], activeId: tab.id }));
   },
 
   save: async (id, opts) => {
     const tab = findTab(id);
     if (!tab) return false;
+    if (tab.path === null) {
+      // 草稿首次保存 → 先选择保存位置，再写盘
+      return performSaveAs(id);
+    }
     try {
       const result = await ipc.writeTextFile({
         path: tab.path,
@@ -243,6 +280,12 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   saveActive: async () => {
     const tab = activeTab();
     if (!tab) return;
+    if (tab.path === null) {
+      // 草稿：⌘S = 选择保存位置并落盘（即使尚未编辑，也允许显式保存空文件）
+      const ok = await get().save(tab.id);
+      if (ok) useUiStore.getState().markSaved();
+      return;
+    }
     if (!tab.dirty) {
       // 内容未变化也视为已保存（用户确认性 ⌘S）
       useUiStore.getState().markSaved();
@@ -253,20 +296,7 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   },
 
   saveAs: async (id) => {
-    const tab = findTab(id);
-    if (!tab) return;
-    const path = await dialogSave({
-      defaultPath: tab.path,
-      filters: FILE_FILTERS,
-    });
-    if (!path || path === tab.path) return;
-    // 新路径无冲突基线（expectedMtime 传 null 跳过检测）
-    patchTab(id, { path, title: basename(path), kind: kindForPath(path), mtime: null, conflict: null });
-    const ok = await get().save(id);
-    if (ok) {
-      useMetaStore.getState().recordOpened(path);
-      persistSession();
-    }
+    await performSaveAs(id);
   },
 
   saveAsActive: async () => {
@@ -275,10 +305,15 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   },
 
   closeTab: async (id) => {
-    dropEditorState(id);
     const tab = findTab(id);
     if (!tab) return;
-    if (tab.dirty) {
+    if (tab.dirty && tab.path === null) {
+      // 草稿：不强制保存（临时记录可随手丢弃），但空内容外的丢弃需一次确认
+      if (tab.content.trim() !== "") {
+        const discard = await confirmDiscardDraft(t("discardDraftPrompt", { title: tab.title }));
+        if (!discard) return;
+      }
+    } else if (tab.dirty) {
       if (tab.conflict === "missing") {
         // 需求 §6.4.8：文件失效时保留未保存内容，引导另存为
         showToast("原文件已不存在，请选择「另存为」保留内容");
@@ -287,6 +322,7 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
       const ok = await get().save(id);
       if (!ok) return; // 冲突未解决，保留标签页
     }
+    dropEditorState(id);
     set((s) => {
       const idx = s.tabs.findIndex((t) => t.id === id);
       const rest = s.tabs.filter((t) => t.id !== id);
@@ -342,7 +378,7 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   reloadFromDisk: async (id) => {
     dropEditorState(id);
     const tab = findTab(id);
-    if (!tab) return;
+    if (!tab || tab.path === null) return;
     try {
       const info = await ipc.readTextFile(tab.path);
       patchTab(id, {
@@ -362,7 +398,7 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
 
   finishRename: (id, newPath) => {
     const tab = findTab(id);
-    if (!tab || tab.path === newPath) return;
+    if (!tab || tab.path === null || tab.path === newPath) return;
     useMetaStore.getState().removeRecent(tab.path);
     patchTab(id, { path: newPath, title: basename(newPath), kind: kindForPath(newPath) });
     useMetaStore.getState().recordOpened(newPath);
@@ -396,6 +432,27 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
     }
   },
 }));
+
+/**
+ * 另存为 / 草稿首次保存：选择位置 → 改路径 → 写盘 → 记入最近列表。
+ * 返回是否成功落盘（取消对话框视为失败，调用方据此决定是否保留标签页）。
+ */
+async function performSaveAs(id: string): Promise<boolean> {
+  const tab = findTab(id);
+  if (!tab) return false;
+  const dir = tab.path === null ? await defaultSaveDir() : undefined;
+  const defaultPath = tab.path ?? (dir ? `${dir.replace(/\/$/, "")}/${tab.title}` : tab.title);
+  const path = await dialogSave({ defaultPath, filters: FILE_FILTERS });
+  if (!path || (tab.path !== null && path === tab.path)) return false;
+  // 新路径无冲突基线（expectedMtime 传 null 跳过检测）
+  patchTab(id, { path, title: basename(path), kind: kindForPath(path), mtime: null, conflict: null });
+  const ok = await useTabsStore.getState().save(id);
+  if (ok) {
+    useMetaStore.getState().recordOpened(path);
+    persistSession();
+  }
+  return ok;
+}
 
 /** openPath 的实际实现（经 inflightOpens 去重包装）。 */
 async function doOpenPath(path: string, opts?: OpenOptions): Promise<boolean> {

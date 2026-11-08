@@ -6,6 +6,7 @@ import { ipc } from "./ipc";
 import { dispatchMenuAction, MenuIds, registerMenuAction } from "./menuActions";
 import { useMetaStore } from "../stores/metaStore";
 import { useTabsStore } from "../stores/tabsStore";
+import { t } from "../i18n";
 import { useUiStore } from "./toast";
 
 async function openViaDialog(): Promise<void> {
@@ -19,6 +20,10 @@ function activeTogglePin(): void {
   const tabs = useTabsStore.getState();
   const tab = tabs.tabs.find((t) => t.id === tabs.activeId);
   if (!tab) return;
+  if (tab.path === null) {
+    useUiStore.getState().showToast(t("draftNotSavedToast"));
+    return;
+  }
   const meta = useMetaStore.getState();
   if (meta.meta.pinned.some((p) => p.path === tab.path)) {
     meta.unpinPath(tab.path);
@@ -46,12 +51,24 @@ export function useFileActions(): void {
       registerMenuAction(MenuIds.saveAs, () => void tabs().saveAsActive()),
       registerMenuAction(MenuIds.renameFile, () => {
         const s = tabs();
-        if (s.activeId) ui().openRenameDialog(s.activeId);
+        if (!s.activeId) return;
+        const tab = s.tabs.find((t) => t.id === s.activeId);
+        if (tab?.path === null) {
+          // 草稿无文件可重命名：语义上等同首次保存（选择名称与位置）
+          void s.saveActive();
+          return;
+        }
+        ui().openRenameDialog(s.activeId);
       }),
       registerMenuAction(MenuIds.revealFinder, () => {
         const s = tabs();
         const tab = s.tabs.find((t) => t.id === s.activeId);
-        if (tab) void ipc.revealInFinder(tab.path);
+        if (!tab) return;
+        if (tab.path === null) {
+          ui().showToast(t("draftNotSavedToast"));
+          return;
+        }
+        void ipc.revealInFinder(tab.path);
       }),
       registerMenuAction(MenuIds.togglePin, activeTogglePin),
       registerMenuAction(MenuIds.closeTab, () => {

@@ -21,7 +21,7 @@ vi.mock("../../lib/ipc", async () => {
   };
 });
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(), save: vi.fn() }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(), save: vi.fn(), ask: vi.fn(async () => false) }));
 vi.mock("../../lib/watcher", () => ({ syncWatchedPaths: vi.fn() }));
 
 import { DEFAULT_META } from "../../types/state";

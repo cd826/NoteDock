@@ -18,9 +18,12 @@ import { useUiStore } from "./toast";
 
 let currentKey = "";
 
-/** 打开/关闭标签页后同步监听目标（keys 去重，避免重复 IPC）。 */
+/** 打开/关闭标签页后同步监听目标（keys 去重，避免重复 IPC；草稿无路径不监听）。 */
 export function syncWatchedPaths(): void {
-  const paths = useTabsStore.getState().tabs.map((t) => t.path);
+  const paths = useTabsStore
+    .getState()
+    .tabs.map((t) => t.path)
+    .filter((p): p is string => p !== null);
   const key = [...paths].sort().join("\n");
   if (key === currentKey) return;
   currentKey = key;

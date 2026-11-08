@@ -1,9 +1,11 @@
 import { useEffect } from "react";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import AppShell from "./components/layout/AppShell";
 import RenameDialog from "./components/common/RenameDialog";
 import SearchPalette from "./components/search/SearchPalette";
 import Toast from "./components/common/Toast";
+import { t } from "./i18n";
 import { initFsWatcher } from "./lib/watcher";
 import { useFileActions } from "./lib/useFileActions";
 import { useTheme } from "./lib/useTheme";
@@ -52,6 +54,19 @@ export default function App() {
     // 3 秒兜底：落盘意外挂起时也保证应用能退出。
     const unClose = getCurrentWindow().onCloseRequested(async (event) => {
       event.preventDefault();
+      // 草稿（未选保存位置的新建文件）无法静默写盘：退出前确认是否丢弃。
+      // 用户取消 → 保持窗口打开（可先 ⌘S 保存草稿再退出）。
+      const draftCount = useTabsStore
+        .getState()
+        .tabs.filter((t) => t.dirty && t.path === null).length;
+      if (draftCount > 0) {
+        const discard = await ask(t("quitDraftPrompt", { count: draftCount }), {
+          title: "NoteDock",
+          okLabel: t("discardDraft"),
+          cancelLabel: t("cancelLabel"),
+        });
+        if (!discard) return;
+      }
       try {
         await Promise.race([
           Promise.all([flushAllDirty(), flushMeta()]),
