@@ -44,9 +44,12 @@ export const editorTheme = EditorView.theme({
   },
   ".cm-searchMatch": {
     backgroundColor: "var(--ed-search-match)",
+    color: "var(--ed-search-match-text)",
   },
   ".cm-searchMatch-selected": {
     backgroundColor: "var(--ed-search-match-current)",
+    color: "var(--ed-search-match-text)",
+    fontWeight: "600",
   },
   ".cm-panels": {
     backgroundColor: "var(--ed-panel-bg)",

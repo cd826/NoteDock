@@ -41,8 +41,9 @@ body {
   --ed-selection: rgba(84, 158, 235, 0.25);
   --ed-border: #d0d7de;
   --ed-panel-bg: #f6f8fa;
-  --ed-search-match: rgba(255, 200, 0, 0.35);
-  --ed-search-match-current: rgba(255, 145, 0, 0.5);
+  --ed-search-match: rgba(255, 199, 0, 0.6);
+  --ed-search-match-current: rgba(255, 145, 0, 0.85);
+  --ed-search-match-text: #3b2f00;
   --ed-code-bg: #f6f8fa;
   --ed-quote-border: #d0d7de;
   --ed-quote-fg: #57606a;
@@ -73,8 +74,9 @@ body {
   --ed-selection: rgba(56, 139, 253, 0.3);
   --ed-border: #30363d;
   --ed-panel-bg: #161b22;
-  --ed-search-match: rgba(187, 128, 9, 0.4);
-  --ed-search-match-current: rgba(187, 128, 9, 0.7);
+  --ed-search-match: rgba(255, 214, 10, 0.9);
+  --ed-search-match-current: rgba(255, 145, 0, 0.95);
+  --ed-search-match-text: #1f242b;
   --ed-code-bg: #21262d;
   --ed-quote-border: #30363d;
   --ed-quote-fg: #8b949e;
