@@ -108,13 +108,15 @@ body {
   padding: 1px 2px;
 }
 
-/* —— 标题 —— */
-.cm-line.cm-md-h1 { font-size: 1.85em; font-weight: 700; line-height: 1.35; margin-top: 0.55em; }
-.cm-line.cm-md-h2 { font-size: 1.5em;  font-weight: 700; line-height: 1.4;  margin-top: 0.55em; }
-.cm-line.cm-md-h3 { font-size: 1.28em; font-weight: 650; line-height: 1.45; margin-top: 0.55em; }
-.cm-line.cm-md-h4 { font-size: 1.12em; font-weight: 650; line-height: 1.5;  margin-top: 0.5em; }
-.cm-line.cm-md-h5 { font-size: 1.02em; font-weight: 650; line-height: 1.5;  margin-top: 0.5em; }
-.cm-line.cm-md-h6 { font-size: 0.95em; font-weight: 650; line-height: 1.5;  margin-top: 0.5em; color: var(--ed-fg-muted); }
+/* —— 标题 ——
+   注意：行间距必须用 padding 而非 margin——CM6 高度图按行盒高度（不含 margin）累计，
+   margin 会让 posAtCoords 的纵向坐标映射错位（↑ 跳行的根因）。 */
+.cm-line.cm-md-h1 { font-size: 1.85em; font-weight: 700; line-height: 1.35; padding-top: 0.55em; }
+.cm-line.cm-md-h2 { font-size: 1.5em;  font-weight: 700; line-height: 1.4;  padding-top: 0.55em; }
+.cm-line.cm-md-h3 { font-size: 1.28em; font-weight: 650; line-height: 1.45; padding-top: 0.55em; }
+.cm-line.cm-md-h4 { font-size: 1.12em; font-weight: 650; line-height: 1.5;  padding-top: 0.5em; }
+.cm-line.cm-md-h5 { font-size: 1.02em; font-weight: 650; line-height: 1.5;  padding-top: 0.5em; }
+.cm-line.cm-md-h6 { font-size: 0.95em; font-weight: 650; line-height: 1.5;  padding-top: 0.5em; color: var(--ed-fg-muted); }
 
 /* —— 行内标记 —— */
 .cm-md-em { font-style: italic; }
@@ -146,8 +148,9 @@ body {
   padding-left: 12px;
   padding-right: 12px;
 }
-.cm-line.cm-code-first { border-radius: 6px 6px 0 0; margin-top: 6px; padding-top: 6px; }
-.cm-line.cm-code-last { border-radius: 0 0 6px 6px; margin-bottom: 6px; padding-bottom: 6px; }
+/* 上下留白用 padding（margin 不进 CM 高度图，会导致纵向光标映射错位） */
+.cm-line.cm-code-first { border-radius: 6px 6px 0 0; padding-top: 12px; }
+.cm-line.cm-code-last { border-radius: 0 0 6px 6px; padding-bottom: 12px; }
 .cm-code-copy {
   float: right;
   display: inline-flex;
