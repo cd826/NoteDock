@@ -328,7 +328,7 @@ function scanInlineMath(
   }
 }
 
-/** livePreview ViewPlugin：仅在文档/选区/视口变化时重建装饰。 */
+/** livePreview ViewPlugin：文档/选区/视口变化或源码模式开关（facet）时重建装饰。 */
 export const livePreviewPlugin = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
@@ -338,7 +338,12 @@ export const livePreviewPlugin = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate): void {
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
+      if (
+        update.docChanged ||
+        update.selectionSet ||
+        update.viewportChanged ||
+        update.state.facet(livePreviewFacet) !== update.startState.facet(livePreviewFacet)
+      ) {
         this.decorations = buildFor(update.view);
       }
     }

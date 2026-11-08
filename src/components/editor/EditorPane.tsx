@@ -1,10 +1,12 @@
 import { useEffect, useRef } from "react";
 import { undo, redo } from "@codemirror/commands";
 import { openSearchPanel } from "@codemirror/search";
+import type { StateEffect } from "@codemirror/state";
 import { t } from "../../i18n";
+import { livePreviewFacet } from "../../editor/livePreview";
 import { MenuIds, registerMenuAction } from "../../lib/menuActions";
 import { useTabsStore, type Tab } from "../../stores/tabsStore";
-import { createEditor, type EditorHandles } from "../../editor/createEditor";
+import { createEditor, kindExtensions, type EditorHandles } from "../../editor/createEditor";
 import { insertLink, toggleWrap } from "../../editor/mdKeymap";
 import { saveEditorState, takeEditorState } from "../../stores/tabsStore";
 import TabBar from "./TabBar";
@@ -73,6 +75,8 @@ export default function EditorPane() {
   const lastEditorDocRef = useRef<string>("");
   /** takeEditorState 的稳定引用（避免 effect 依赖抖动）。 */
   const takeEditorStateRef = useRef(takeEditorState);
+  /** 上一轮同步上下文：同一标签页的 kind/sourceMode 变化走 Compartment 增量。 */
+  const syncCtxRef = useRef<{ tabId: string; kind: Tab["kind"]; sourceMode: boolean } | null>(null);
 
   activeTabIdRef.current = activeId;
 
@@ -149,22 +153,48 @@ export default function EditorPane() {
   }, []);
 
   // —— 标签页切换 / 类型 / 源码模式 / 外部重载 → 同步视图 ——
+  // 同一标签页的 kind/sourceMode 变化用 Compartment 增量切换（保留撤销历史）；
+  // 整体 setState 会命中旧快照（文档文本一致即被判定可用）把模式改回去，
+  // 导致 ⌘/ 源码模式"无效"——这是撤销历史隔离与模式切换的协同规则。
   const tabId = tab?.id;
   const tabKind = tab?.kind;
   const tabSourceMode = tab?.sourceMode;
   const tabConflict = tab?.conflict;
   useEffect(() => {
     const handles = handlesRef.current;
-    if (!handles || !tabId) return;
+    if (!handles || !tabId) {
+      syncCtxRef.current = null;
+      return;
+    }
     const currentTab = useTabsStore.getState().tabs.find((x) => x.id === tabId);
-    if (!currentTab) return;
-    // 优先恢复该标签页的状态快照：undo 历史跨切换保留、各文件隔离；
-    // 无快照（首次打开/磁盘重载后）才全新构建
-    const saved = useTabsStore.getState().tabs.find((x) => x.id === tabId)
-      ? takeEditorStateRef.current(tabId)
-      : undefined;
-    const savedUsable =
-      saved && saved.doc.toString() === currentTab.content;
+    if (!currentTab) {
+      syncCtxRef.current = null;
+      return;
+    }
+    const ctx = syncCtxRef.current;
+    const docSame = handles.view.state.doc.toString() === currentTab.content;
+
+    if (ctx && ctx.tabId === tabId && docSame) {
+      const effects: StateEffect<unknown>[] = [];
+      if (ctx.kind !== currentTab.kind) {
+        effects.push(handles.kindComp.reconfigure(kindExtensions(currentTab.kind)));
+      }
+      if (ctx.sourceMode !== currentTab.sourceMode) {
+        effects.push(handles.srcComp.reconfigure(livePreviewFacet.of(!currentTab.sourceMode)));
+      }
+      if (effects.length > 0) {
+        handles.view.dispatch({ effects });
+        // 快照与新模式保持一致，否则下次标签切换会把模式还原回去
+        saveEditorState(tabId, handles.view.state);
+      }
+      syncCtxRef.current = { tabId, kind: currentTab.kind, sourceMode: currentTab.sourceMode };
+      return;
+    }
+
+    // 标签页切换 / 文档变化（磁盘重载等）：恢复该标签页快照（undo 历史跨切换
+    // 保留、各文件隔离），无快照（首次打开/磁盘重载后）才全新构建
+    const saved = takeEditorStateRef.current(tabId);
+    const savedUsable = saved && saved.doc.toString() === currentTab.content;
     handles.view.setState(
       savedUsable && saved
         ? saved
@@ -176,6 +206,7 @@ export default function EditorPane() {
           ),
     );
     lastEditorDocRef.current = currentTab.content;
+    syncCtxRef.current = { tabId, kind: currentTab.kind, sourceMode: currentTab.sourceMode };
     const raf = requestAnimationFrame(() => {
       handles.view.scrollDOM.scrollTop = currentTab.scrollTop;
     });
