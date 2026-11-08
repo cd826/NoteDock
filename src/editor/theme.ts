@@ -25,7 +25,11 @@ export const editorTheme = EditorView.theme({
   },
   ".cm-content": {
     caretColor: "var(--ed-caret)",
-    padding: "12px 0 40vh",
+    // 滚动容器全宽（滚动条贴窗口右缘），内容居中限宽 800px（需求 §4.2）
+    maxWidth: "800px",
+    margin: "0 auto",
+    padding: "12px 24px 40vh",
+    boxSizing: "border-box",
     fontSize: "15px",
   },
   ".cm-line": {

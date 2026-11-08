@@ -83,10 +83,18 @@ pub struct TextFileInfo {
 }
 
 /// 读取文本文件（md/txt/sql）。拒绝目录与二进制内容（含 NUL 字节）。
+/// 所有文件命令均为 async + spawn_blocking：TCC 授权等待、iCloud 拉取、
+/// 慢速磁盘等阻塞场景不得冻结主线程（否则 UI 冻结、窗口拖不动/关不掉）。
 #[tauri::command]
-pub fn read_text_file(path: String) -> Result<TextFileInfo, FsError> {
-    let p = Path::new(&path);
-    let meta = fs::metadata(p).map_err(|_| FsError::NotFound { path: path.clone() })?;
+pub async fn read_text_file(path: String) -> Result<TextFileInfo, FsError> {
+    tauri::async_runtime::spawn_blocking(move || read_text_file_blocking(&path))
+        .await
+        .map_err(|e| FsError::Io { message: e.to_string() })?
+}
+
+fn read_text_file_blocking(path: &str) -> Result<TextFileInfo, FsError> {
+    let p = Path::new(path);
+    let meta = fs::metadata(p).map_err(|_| FsError::NotFound { path: path.to_string() })?;
     if meta.is_dir() {
         return Err(FsError::Io { message: "路径是一个目录".into() });
     }
@@ -126,7 +134,13 @@ pub struct WriteResult {
 
 /// 写入原始文件：先做外部修改检测（mtime 快照比对），再原子写。
 #[tauri::command]
-pub fn write_text_file(req: WriteRequest) -> Result<WriteResult, FsError> {
+pub async fn write_text_file(req: WriteRequest) -> Result<WriteResult, FsError> {
+    tauri::async_runtime::spawn_blocking(move || write_text_file_blocking(&req))
+        .await
+        .map_err(|e| FsError::Io { message: e.to_string() })?
+}
+
+fn write_text_file_blocking(req: &WriteRequest) -> Result<WriteResult, FsError> {
     let p = Path::new(&req.path);
     let current = crate::fsio::mtime_snapshot(p);
     if !req.force.unwrap_or(false) {
@@ -158,8 +172,14 @@ pub struct PathInfo {
 
 /// 路径探测（不抛错，缺失时 exists=false），供侧边栏失效态与冲突恢复使用。
 #[tauri::command]
-pub fn stat_path(path: String) -> Result<PathInfo, FsError> {
-    let p = Path::new(&path);
+pub async fn stat_path(path: String) -> Result<PathInfo, FsError> {
+    tauri::async_runtime::spawn_blocking(move || stat_path_blocking(&path))
+        .await
+        .map_err(|e| FsError::Io { message: e.to_string() })?
+}
+
+fn stat_path_blocking(path: &str) -> Result<PathInfo, FsError> {
+    let p = Path::new(path);
     match fs::metadata(p) {
         Ok(meta) => Ok(PathInfo {
             exists: true,
@@ -173,10 +193,16 @@ pub fn stat_path(path: String) -> Result<PathInfo, FsError> {
 
 /// 新建空文本文件（新建文件流：保存面板确定路径后调用）。
 #[tauri::command]
-pub fn create_text_file(path: String) -> Result<(), FsError> {
-    let p = Path::new(&path);
+pub async fn create_text_file(path: String) -> Result<(), FsError> {
+    tauri::async_runtime::spawn_blocking(move || create_text_file_blocking(&path))
+        .await
+        .map_err(|e| FsError::Io { message: e.to_string() })?
+}
+
+fn create_text_file_blocking(path: &str) -> Result<(), FsError> {
+    let p = Path::new(path);
     if p.exists() {
-        return Err(FsError::AlreadyExists { path });
+        return Err(FsError::AlreadyExists { path: path.to_string() });
     }
     fs::write(p, b"")?;
     Ok(())
@@ -184,15 +210,21 @@ pub fn create_text_file(path: String) -> Result<(), FsError> {
 
 /// 重命名（同目录内改名，不改变用户原有组织方式，需求 §6.1.7）。
 #[tauri::command]
-pub fn rename_file(from: String, new_name: String) -> Result<String, FsError> {
-    let src = PathBuf::from(&from);
+pub async fn rename_file(from: String, new_name: String) -> Result<String, FsError> {
+    tauri::async_runtime::spawn_blocking(move || rename_file_blocking(&from, &new_name))
+        .await
+        .map_err(|e| FsError::Io { message: e.to_string() })?
+}
+
+fn rename_file_blocking(from: &str, new_name: &str) -> Result<String, FsError> {
+    let src = PathBuf::from(from);
     let file_name = src
         .file_name()
         .ok_or_else(|| FsError::Io { message: "路径缺少文件名".into() })?
         .to_string_lossy()
         .to_string();
     if new_name.trim() == file_name {
-        return Ok(from);
+        return Ok(from.to_string());
     }
     let dir = src.parent().ok_or_else(|| FsError::Io { message: "路径缺少父目录".into() })?;
     let target = dir.join(&new_name);
@@ -205,23 +237,35 @@ pub fn rename_file(from: String, new_name: String) -> Result<String, FsError> {
 
 /// 在 Finder 中显示（需求 §4.4）。
 #[tauri::command]
-pub fn reveal_in_finder(path: String) -> Result<(), String> {
-    tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| e.to_string())
+pub async fn reveal_in_finder(path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// 用系统默认方式打开外部链接/文件（链接 ⌘点击等场景）。
 #[tauri::command]
-pub fn open_external(target: String) -> Result<(), String> {
-    tauri_plugin_opener::open_url(target, None::<&str>).map_err(|e| e.to_string())
+pub async fn open_external(target: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tauri_plugin_opener::open_url(target, None::<&str>).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// 用户的文稿目录（新建文件保存面板的默认位置，需求 §6.5）。
 #[tauri::command]
-pub fn get_documents_dir(app: tauri::AppHandle) -> Result<Option<String>, String> {
-    app.path()
-        .document_dir()
-        .map(|d| Some(d.to_string_lossy().into_owned()))
-        .map_err(|e| e.to_string())
+pub async fn get_documents_dir(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.path()
+            .document_dir()
+            .map(|d| Some(d.to_string_lossy().into_owned()))
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]
@@ -271,7 +315,7 @@ mod tests {
         let real_mtime = crate::fsio::mtime_snapshot(&path).unwrap();
 
         // 快照一致 → 保存成功
-        let ok = write_text_file(WriteRequest {
+        let ok = write_text_file_blocking(&WriteRequest {
             path: path.to_string_lossy().into_owned(),
             content: "v2".into(),
             expected_mtime: Some(real_mtime),
@@ -281,7 +325,7 @@ mod tests {
         assert!(ok.is_ok());
 
         // 快照过期 → external-change，不覆盖
-        let err = write_text_file(WriteRequest {
+        let err = write_text_file_blocking(&WriteRequest {
             path: path.to_string_lossy().into_owned(),
             content: "clobber".into(),
             expected_mtime: Some(real_mtime), // 磁盘 mtime 已更新
@@ -292,7 +336,7 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "v2", "must not silently overwrite");
 
         // force=true → 覆盖成功
-        let ok = write_text_file(WriteRequest {
+        let ok = write_text_file_blocking(&WriteRequest {
             path: path.to_string_lossy().into_owned(),
             content: "v3".into(),
             expected_mtime: Some(real_mtime),
@@ -304,7 +348,7 @@ mod tests {
 
         // BOM 保留
         std::fs::write(&path, &[0xEFu8, 0xBB, 0xBFu8]).unwrap();
-        write_text_file(WriteRequest {
+        write_text_file_blocking(&WriteRequest {
             path: path.to_string_lossy().into_owned(),
             content: "bom-content".into(),
             expected_mtime: None,

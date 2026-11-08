@@ -45,6 +45,19 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app_handle, event| {
+            // macOS 惯例：红点仅关窗口，应用留在 Dock；点 Dock 图标恢复窗口
+            if let tauri::RunEvent::Reopen { has_visible_windows, .. } = event {
+                if !has_visible_windows {
+                    if let Some(win) = _app_handle.get_webview_window("main") {
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    } else if let Some(cfg) = _app_handle.config().app.windows.first().cloned() {
+                        if let Ok(builder) = tauri::WebviewWindowBuilder::from_config(_app_handle, &cfg) {
+                            let _ = builder.build();
+                        }
+                    }
+                }
+            }
             // Finder 双击文件 / 拖到 Dock 图标打开（需求 §6.2；文件关联在 Phase 5 配置）
             if let tauri::RunEvent::Opened { urls } = event {
                 let paths: Vec<String> = urls
