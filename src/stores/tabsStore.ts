@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { EditorState } from "@codemirror/state";
 import { save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { ipc } from "../lib/ipc";
 import { flushMeta } from "./metaStore";
@@ -136,6 +137,27 @@ const inflightOpens = new Map<string, Promise<boolean>>();
 let restoreStarted = false;
 
 /**
+ * 每标签页的编辑器状态快照（文档+撤销历史+选区）。
+ * 模块级 Map 而非 React 状态：每次键入更新仅是引用赋值，不触发渲染。
+ * 切换标签页时恢复 → undo 历史跨切换保留、各文件互相隔离；
+ * 关闭标签页/磁盘重载时清除。
+ */
+const editorStates = new Map<string, EditorState>();
+
+/** 编辑器每次文档/选区变更后调用，保存该标签页最新状态快照。 */
+export function saveEditorState(id: string, state: EditorState): void {
+  editorStates.set(id, state);
+}
+
+export function takeEditorState(id: string): EditorState | undefined {
+  return editorStates.get(id);
+}
+
+function dropEditorState(id: string): void {
+  editorStates.delete(id);
+}
+
+/**
  * 保存策略（按用户决策：手动保存优先，⌘S 写盘；不做空闲自动保存）。
  * 防丢失底线：关闭标签页 / 关闭窗口 / 退出应用前，把未保存内容写盘。
  */
@@ -253,6 +275,7 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   },
 
   closeTab: async (id) => {
+    dropEditorState(id);
     const tab = findTab(id);
     if (!tab) return;
     if (tab.dirty) {
@@ -317,6 +340,7 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   },
 
   reloadFromDisk: async (id) => {
+    dropEditorState(id);
     const tab = findTab(id);
     if (!tab) return;
     try {

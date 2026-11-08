@@ -45,10 +45,20 @@ export default function App() {
   useEffect(() => {
     const unwatch = initFsWatcher();
 
-    // 窗口关闭/退出：未保存内容先落盘再放行关闭
-    const unClose = getCurrentWindow().onCloseRequested(async () => {
-      await flushAllDirty();
-      await flushMeta();
+    // 窗口关闭/退出：先拦截 → 未保存内容与元数据落盘 → 再真正关闭。
+    // 注意 Tauri 的 onCloseRequested 不会等待异步 handler，必须 preventDefault
+    // 后自行 destroy，否则落盘会被中途销毁（退出后标签页/内容丢失的根因）。
+    // 3 秒兜底：落盘意外挂起时也保证应用能退出。
+    const unClose = getCurrentWindow().onCloseRequested(async (event) => {
+      event.preventDefault();
+      try {
+        await Promise.race([
+          Promise.all([flushAllDirty(), flushMeta()]),
+          new Promise((resolve) => setTimeout(resolve, 3000)),
+        ]);
+      } finally {
+        void getCurrentWindow().destroy();
+      }
     });
 
     return () => {

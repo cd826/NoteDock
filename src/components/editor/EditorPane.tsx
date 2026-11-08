@@ -5,6 +5,7 @@ import { t } from "../../i18n";
 import { MenuIds, registerMenuAction } from "../../lib/menuActions";
 import { useTabsStore, type Tab } from "../../stores/tabsStore";
 import { createEditor, type EditorHandles } from "../../editor/createEditor";
+import { saveEditorState, takeEditorState } from "../../stores/tabsStore";
 import TabBar from "./TabBar";
 
 /** 冲突/缺失横幅（需求 §6.4：不静默覆盖，明确提示并提供恢复路径）。 */
@@ -69,6 +70,8 @@ export default function EditorPane() {
   const activeTabIdRef = useRef<string | null>(null);
   /** 编辑器视图当前持有的文档内容（区分编辑器输入 vs 外部重载）。 */
   const lastEditorDocRef = useRef<string>("");
+  /** takeEditorState 的稳定引用（避免 effect 依赖抖动）。 */
+  const takeEditorStateRef = useRef(takeEditorState);
 
   activeTabIdRef.current = activeId;
 
@@ -79,9 +82,11 @@ export default function EditorPane() {
       parent: hostRef.current,
       kind: "md",
       doc: "",
-      onUpdate: ({ docChanged, doc, cursor }) => {
+      onUpdate: ({ docChanged, doc, cursor, view }) => {
         const id = activeTabIdRef.current;
         if (!id) return;
+        // 保存状态快照（含撤销历史）：切换标签页时恢复，undo 跨切换保留
+        saveEditorState(id, view.state);
         if (docChanged) {
           lastEditorDocRef.current = doc;
           useTabsStore.getState().updateContent(id, doc, cursor);
@@ -142,15 +147,22 @@ export default function EditorPane() {
     if (!handles || !tabId) return;
     const currentTab = useTabsStore.getState().tabs.find((x) => x.id === tabId);
     if (!currentTab) return;
-    // setState 整体重建：撤销历史随标签页隔离（修复 ⌘Z 串文件内容），
-    // 同时应用文件类型与源码模式
+    // 优先恢复该标签页的状态快照：undo 历史跨切换保留、各文件隔离；
+    // 无快照（首次打开/磁盘重载后）才全新构建
+    const saved = useTabsStore.getState().tabs.find((x) => x.id === tabId)
+      ? takeEditorStateRef.current(tabId)
+      : undefined;
+    const savedUsable =
+      saved && saved.doc.toString() === currentTab.content;
     handles.view.setState(
-      handles.makeState(
-        currentTab.content,
-        currentTab.kind,
-        currentTab.sourceMode,
-        currentTab.cursor,
-      ),
+      savedUsable && saved
+        ? saved
+        : handles.makeState(
+            currentTab.content,
+            currentTab.kind,
+            currentTab.sourceMode,
+            currentTab.cursor,
+          ),
     );
     lastEditorDocRef.current = currentTab.content;
     const raf = requestAnimationFrame(() => {
