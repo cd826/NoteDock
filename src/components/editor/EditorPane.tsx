@@ -5,6 +5,7 @@ import { t } from "../../i18n";
 import { MenuIds, registerMenuAction } from "../../lib/menuActions";
 import { useTabsStore, type Tab } from "../../stores/tabsStore";
 import { createEditor, type EditorHandles } from "../../editor/createEditor";
+import { insertLink, toggleWrap } from "../../editor/mdKeymap";
 import { saveEditorState, takeEditorState } from "../../stores/tabsStore";
 import TabBar from "./TabBar";
 
@@ -126,6 +127,16 @@ export default function EditorPane() {
       registerMenuAction(MenuIds.toggleSourceMode, () => {
         const id = activeTabIdRef.current;
         if (id) useTabsStore.getState().toggleSourceMode(id);
+      }),
+      // 格式菜单（⌘B/⌘I/⌘K 由菜单加速键分发，此处执行编辑器命令）
+      registerMenuAction(MenuIds.bold, () => {
+        if (toggleWrap("**")(handles.view)) handles.view.focus();
+      }),
+      registerMenuAction(MenuIds.italic, () => {
+        if (toggleWrap("*")(handles.view)) handles.view.focus();
+      }),
+      registerMenuAction(MenuIds.link, () => {
+        if (insertLink(handles.view)) handles.view.focus();
       }),
     ];
 

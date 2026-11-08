@@ -39,4 +39,7 @@ export const MenuIds = {
   replace: "replace",
   toggleSourceMode: "toggle-source-mode",
   toggleSidebar: "toggle-sidebar",
+  bold: "bold",
+  italic: "italic",
+  link: "link",
 } as const;

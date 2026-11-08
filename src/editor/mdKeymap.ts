@@ -11,7 +11,7 @@ import { keymap } from "@codemirror/view";
  */
 
 /** 为选区包裹/解除包裹定界符（多选区安全）。 */
-function toggleWrap(marker: string): Command {
+export function toggleWrap(marker: string): Command {
   return (view) => {
     const { state } = view;
     const m = marker.length;
@@ -43,7 +43,7 @@ function toggleWrap(marker: string): Command {
 }
 
 /** ⌘K：把选区变为 [文本](url) 并选中 url；无选区时插入 [](url)。 */
-const insertLink: Command = (view) => {
+export const insertLink: Command = (view) => {
   const { state } = view;
   const changes = state.changeByRange((range) => {
     const text = state.sliceDoc(range.from, range.to);

@@ -21,6 +21,9 @@ pub const ID_REDO: &str = "redo";
 pub const ID_FIND: &str = "find";
 pub const ID_REPLACE: &str = "replace";
 pub const ID_TOGGLE_SOURCE_MODE: &str = "toggle-source-mode";
+pub const ID_BOLD: &str = "bold";
+pub const ID_ITALIC: &str = "italic";
+pub const ID_LINK: &str = "link";
 pub const ID_TOGGLE_SIDEBAR: &str = "toggle-sidebar";
 
 /// 系统语言是否为中文。
@@ -83,10 +86,10 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .item(&item(app, ID_UNDO, "撤销", "Undo", "CmdOrCtrl+Z")?)
         .item(&item(app, ID_REDO, "重做", "Redo", "CmdOrCtrl+Shift+Z")?)
         .separator()
-        .cut()
-        .copy()
-        .paste()
-        .select_all()
+        .cut_with_text(l("剪切", "Cut"))
+        .copy_with_text(l("拷贝", "Copy"))
+        .paste_with_text(l("粘贴", "Paste"))
+        .select_all_with_text(l("全选", "Select All"))
         .separator()
         .item(&item(app, ID_FIND, "查找…", "Find…", "CmdOrCtrl+F")?)
         .item(&item(app, ID_REPLACE, "查找并替换…", "Find and Replace…", "CmdOrCtrl+Alt+F")?)
@@ -100,23 +103,31 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         )?)
         .build()?;
 
+    // —— 格式（Markdown 编辑：转发前端命令，快捷键在菜单栏可见，需求 §7.4.3）——
+    let format_menu = SubmenuBuilder::new(app, l("格式", "Format"))
+        .item(&item(app, ID_BOLD, "粗体", "Bold", "CmdOrCtrl+B")?)
+        .item(&item(app, ID_ITALIC, "斜体", "Italic", "CmdOrCtrl+I")?)
+        .item(&item(app, ID_LINK, "链接…", "Link…", "CmdOrCtrl+K")?)
+        .build()?;
+
     // —— 视图 ——
     let view_menu = SubmenuBuilder::new(app, l("视图", "View"))
         .item(&item(app, ID_TOGGLE_SIDEBAR, "隐藏 / 显示侧边栏", "Hide / Show Sidebar", "CmdOrCtrl+Alt+S")?)
         .separator()
-        .fullscreen()
+        .fullscreen_with_text(l("进入全屏", "Enter Full Screen"))
         .build()?;
 
     // —— 窗口 ——
     let window_menu = SubmenuBuilder::new(app, l("窗口", "Window"))
-        .minimize()
-        .maximize()
+        .minimize_with_text(l("最小化", "Minimize"))
+        .maximize_with_text(l("缩放", "Zoom"))
         .build()?;
 
     let menu = MenuBuilder::new(app)
         .item(&app_menu)
         .item(&file_menu)
         .item(&edit_menu)
+        .item(&format_menu)
         .item(&view_menu)
         .item(&window_menu)
         .build()?;
