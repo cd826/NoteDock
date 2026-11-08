@@ -33,6 +33,7 @@
     "react-dom": "^19.1.0",
     "tailwindcss": "^4.3.5",
     "turndown": "^7.2.5",
+    "turndown-plugin-gfm": "^1.0.2",
     "zustand": "^5.1.0"
   },
   "devDependencies": {

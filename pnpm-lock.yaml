@@ -74,6 +74,9 @@ importers:
       turndown:
         specifier: ^7.2.5
         version: 7.2.5
+      turndown-plugin-gfm:
+        specifier: ^1.0.2
+        version: 1.0.2
       zustand:
         specifier: ^5.1.0
         version: 5.1.0(@types/react@19.3.0)(react@19.3.1)
@@ -1204,6 +1207,9 @@ packages:
   ts-dedent@2.3.0:
     resolution: {integrity: sha512-JfJeIHke7y2egdGGgRAvpCwYFUsHlM2gPcrVOxFkznt/4uzQ7HFmvE63iFHVLBJNDuyDOQgijDK/tXH/f6Msjg==}
     engines: {node: '>=6.10'}
+
+  turndown-plugin-gfm@1.0.2:
+    resolution: {integrity: sha512-vwz9tfvF7XN/jE0dGoBei3FXWuvll78ohzCZQuOb+ZjWrs3a0XhQVomJEb2Qh4VHTPNRO4GPZh0V7VRbiWwkRg==}
 
   turndown@7.2.5:
     resolution: {integrity: sha512-EKZvCCFHh8sWttpAMs10U6niZFJ2cpz8LkCPlylxoG4JcHF50J7EHnnBW3AY1qXtUMu7kDjCp7dnggB1sIbqEQ==}
@@ -2523,6 +2529,8 @@ snapshots:
       picomatch: 4.0.7
 
   ts-dedent@2.3.0: {}
+
+  turndown-plugin-gfm@1.0.2: {}
 
   turndown@7.2.5:
     dependencies:

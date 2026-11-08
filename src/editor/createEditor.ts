@@ -13,7 +13,7 @@ import {
   rectangularSelection,
 } from "@codemirror/view";
 import { search, searchKeymap } from "@codemirror/search";
-import TurndownService from "turndown";
+import { htmlToMarkdown, looksLikeMarkdown } from "./htmlToMd";
 import { editorThemeExtension } from "./theme";
 import { livePreviewExtension, livePreviewFacet } from "./livePreview";
 import { mdKeymapExtension } from "./mdKeymap";
@@ -46,16 +46,17 @@ export function kindExtensions(kind: "md" | "txt" | "sql"): Extension {
 
 /** 粘贴富文本 → Markdown（turndown 转换；纯文本粘贴走 CM 默认行为）。 */
 function richPasteExtension(): Extension {
-  const turndown = new TurndownService({
-    headingStyle: "atx",
-    codeBlockStyle: "fenced",
-    bulletListMarker: "-",
-  });
   return EditorView.domEventHandlers({
     paste(event, view) {
-      const html = event.clipboardData?.getData("text/html");
+      const dt = event.clipboardData;
+      if (!dt) return false;
+      const plain = dt.getData("text/plain");
+      // 剪贴板纯文本本身就是 Markdown 源（AI 对话复制的 plain 版即源文本）
+      // → 原样插入，零失真（对齐用户验收基准 zSnap.md）。
+      if (plain && looksLikeMarkdown(plain)) return false;
+      const html = dt.getData("text/html");
       if (!html) return false;
-      const md = turndown.turndown(html);
+      const md = htmlToMarkdown(html);
       if (!md.trim()) return false;
       event.preventDefault();
       view.dispatch(view.state.replaceSelection(md), { scrollIntoView: true });
