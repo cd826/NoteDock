@@ -20,6 +20,8 @@ const MAX_RECENTS = 50;
 interface MetaStore {
   /** 首次启动从磁盘加载完成。 */
   hydrated: boolean;
+  /** 磁盘元数据存在但读取/解析失败：进入只读保护，禁止回写覆盖。 */
+  loadFailed: boolean;
   meta: AppMeta;
   hydrate(): Promise<void>;
   setPrefs(patch: Partial<Prefs>): void;
@@ -38,10 +40,17 @@ interface MetaStore {
 const SAVE_DEBOUNCE_MS = 400;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** 是否允许持久化：未完成加载、或磁盘数据读取失败时，禁止回写（防止默认值覆盖）。 */
+function canPersist(): boolean {
+  const s = useMetaStore.getState();
+  return s.hydrated && !s.loadFailed;
+}
+
 function schedulePersist(): void {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     saveTimer = null;
+    if (!canPersist()) return;
     void ipc
       .saveAppState(useMetaStore.getState().meta)
       .catch((err) => console.error("[meta] 保存元数据失败", err));
@@ -50,6 +59,7 @@ function schedulePersist(): void {
 
 export const useMetaStore = create<MetaStore>((set, get) => ({
   hydrated: false,
+  loadFailed: false,
   meta: DEFAULT_META,
   hydrate: async () => {
     if (get().hydrated) return;
@@ -68,9 +78,10 @@ export const useMetaStore = create<MetaStore>((set, get) => ({
         });
       set({ meta, hydrated: true });
     } catch (err) {
-      // 元数据读取失败不应阻断应用启动（用户文件不受影响）
-      console.error("[meta] 加载元数据失败", err);
-      set({ hydrated: true });
+      // 元数据读取失败：不阻断启动，但进入只读保护（磁盘数据可能是损坏而非丢失，
+      // 不能用空数据覆盖——文件本身不受影响，符合需求 §6.3.5）
+      console.error("[meta] 加载元数据失败，进入只读保护", err);
+      set({ hydrated: true, loadFailed: true });
     }
   },
   setPrefs: (patch) => {
@@ -144,12 +155,13 @@ export const useMetaStore = create<MetaStore>((set, get) => ({
   },
 }));
 
-/** 立即持久化（退出/关闭窗口前 flush，Phase 4 接入）。 */
+/** 立即持久化（退出/关闭窗口前 flush）。加载失败时拒绝回写。 */
 export function flushMeta(): Promise<void> {
   if (saveTimer) {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
+  if (!canPersist()) return Promise.resolve();
   return ipc
     .saveAppState(useMetaStore.getState().meta)
     .catch((err) => console.error("[meta] 保存元数据失败", err));

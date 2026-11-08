@@ -115,18 +115,19 @@ fn state_file(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join(STATE_FILE))
 }
 
-/// 读取元数据。文件不存在视为首次启动，返回默认值；
-/// JSON 损坏时同样返回默认值（元数据丢失不影响用户文件，符合需求 §6.3.5）。
+/// 读取元数据。
+/// - 文件不存在：首次启动，返回默认值（允许后续正常持久化）；
+/// - 文件存在但损坏/读取失败：返回 Err——前端据此进入"只读保护"，
+///   绝不用默认值回写覆盖磁盘上的既有数据。
 #[tauri::command]
 pub fn load_app_state(app: AppHandle) -> Result<AppMeta, String> {
     let file = state_file(&app)?;
-    match std::fs::read(&file) {
-        Ok(bytes) => match serde_json::from_slice::<AppMeta>(&bytes) {
-            Ok(meta) => Ok(meta),
-            Err(_) => Ok(AppMeta::default()),
-        },
-        Err(_) => Ok(AppMeta::default()),
-    }
+    let bytes = match std::fs::read(&file) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(AppMeta::default()),
+        Err(e) => return Err(format!("读取元数据失败: {e}")),
+    };
+    serde_json::from_slice::<AppMeta>(&bytes).map_err(|e| format!("元数据解析失败: {e}"))
 }
 
 /// 保存元数据（原子写）。由前端防抖调用。
