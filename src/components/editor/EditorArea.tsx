@@ -5,7 +5,8 @@ import { useMetaStore } from "../../stores/metaStore";
 import EditorPane from "./EditorPane";
 
 /**
- * 右侧编辑区外壳：标题栏拖拽区 + 编辑主面板（标签页/横幅/内容）。
+ * 右侧编辑区外壳：编辑主面板（标签页/横幅/内容）。
+ * 标题栏拖拽区并入 TabBar 一行（空白间隙可拖动窗口，Xcode 式统一标题栏）；
  * 侧边栏隐藏时，底部提供恢复按钮（与侧边栏底部按钮位置对应）。
  */
 export default function EditorArea() {
@@ -13,8 +14,6 @@ export default function EditorArea() {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col bg-white dark:bg-[#1e1e1e]">
-      {/* 标题栏拖拽区（Overlay 标题栏） */}
-      <div data-tauri-drag-region className="h-12 shrink-0" />
       <EditorPane />
       {sidebarHidden && (
         <footer className="flex h-11 shrink-0 items-center border-t border-neutral-200/80 px-2 dark:border-neutral-700/60">

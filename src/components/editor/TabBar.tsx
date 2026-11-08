@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, X } from "lucide-react";
 import { t } from "../../i18n";
 import { useUiStore } from "../../lib/toast";
+import { useMetaStore } from "../../stores/metaStore";
 import { useTabsStore } from "../../stores/tabsStore";
 
 /** ⌘S 保存成功后短暂显示"已保存"（需求 §8.5：保存状态的轻量明确反馈）。 */
@@ -18,24 +19,33 @@ function SavedFlash() {
 
   if (!visible) return null;
   return (
-    <span className="ml-auto flex shrink-0 items-center gap-1 pr-2 text-[11px] text-emerald-500">
+    <span className="pointer-events-none ml-auto flex shrink-0 items-center gap-1 pr-2 text-[11px] text-emerald-500">
       <Check size={12} strokeWidth={2.5} />
       {t("savedFlash")}
     </span>
   );
 }
 
-/** 多文件标签页（需求 §4.3：点击切换、关闭、脏状态标识）。 */
+/**
+ * 多文件标签页（需求 §4.3：点击切换、关闭、脏状态标识）。
+ * 兼作 Overlay 标题栏的窗口拖拽区（标签栏空白间隙拖动窗口，原 h-12 拖拽条已并入本行）；
+ * 侧边栏隐藏时左侧留出红绿灯位置。无标签页时渲染为纯拖拽条。
+ */
 export default function TabBar() {
   const tabs = useTabsStore((s) => s.tabs);
   const activeId = useTabsStore((s) => s.activeId);
   const setActive = useTabsStore((s) => s.setActive);
   const closeTab = useTabsStore((s) => s.closeTab);
-
-  if (tabs.length === 0) return null;
+  const sidebarHidden = useMetaStore((s) => s.meta.prefs.sidebarHidden);
 
   return (
-    <div className="flex h-9 shrink-0 items-stretch overflow-x-auto border-b border-neutral-200/80 bg-neutral-50/60 px-1 dark:border-neutral-700/60 dark:bg-[#232326]">
+    <div
+      data-tauri-drag-region
+      className={[
+        "flex h-9 shrink-0 items-stretch overflow-x-auto border-b border-neutral-200/80 bg-neutral-50/60 dark:border-neutral-700/60 dark:bg-[#232326]",
+        sidebarHidden ? "pl-20" : "px-1",
+      ].join(" ")}
+    >
       {tabs.map((tab) => {
         const active = tab.id === activeId;
         return (
