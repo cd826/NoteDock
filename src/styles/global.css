@@ -50,6 +50,9 @@ body {
   --ed-hr: #d8dee4;
   --ed-dim: #8c959f;
   --ed-task: #0a66d0;
+  --ed-input-bg: #ffffff;
+  --ed-btn-bg: #f6f8fa;
+  --ed-btn-hover: #e9edf2;
   /* 代码高亮（浅色，GitHub 风格） */
   --tok-keyword: #cf222e;
   --tok-string: #0a3069;
@@ -79,6 +82,9 @@ body {
   --ed-hr: #30363d;
   --ed-dim: #6e7681;
   --ed-task: #58a6ff;
+  --ed-input-bg: #1b2027;
+  --ed-btn-bg: #2a3038;
+  --ed-btn-hover: #343b45;
   /* 代码高亮（深色，GitHub Dark 风格） */
   --tok-keyword: #ff7b72;
   --tok-string: #a5d6ff;

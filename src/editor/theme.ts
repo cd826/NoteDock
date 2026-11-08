@@ -53,13 +53,52 @@ export const editorTheme = EditorView.theme({
     color: "var(--ed-fg)",
     borderBottom: "1px solid var(--ed-border)",
   },
-  ".cm-panel.cm-search input, .cm-panel.cm-search button": {
+  ".cm-panel.cm-search": {
+    padding: "8px 12px",
+  },
+  ".cm-panel.cm-search input.cm-textfield, .cm-panel.cm-search input:not([type=checkbox])": {
+    background: "var(--ed-input-bg)",
+    color: "var(--ed-fg)",
+    border: "1px solid var(--ed-border)",
+    borderRadius: "6px",
+    padding: "3px 8px",
     fontFamily: "inherit",
     fontSize: "12px",
+    outline: "none",
+  },
+  ".cm-panel.cm-search input:focus": {
+    borderColor: "var(--ed-caret)",
+  },
+  ".cm-panel.cm-search button": {
+    background: "var(--ed-btn-bg)",
+    color: "var(--ed-fg)",
+    border: "1px solid var(--ed-border)",
+    borderRadius: "6px",
+    padding: "3px 10px",
+    fontFamily: "inherit",
+    fontSize: "12px",
+    cursor: "pointer",
+  },
+  ".cm-panel.cm-search button:hover": {
+    background: "var(--ed-btn-hover)",
+  },
+  ".cm-panel.cm-search button[name=close]": {
+    background: "transparent",
+    border: "none",
+    color: "var(--ed-fg-muted)",
   },
   ".cm-panel.cm-search label": {
     fontSize: "12px",
     color: "var(--ed-fg-muted)",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    margin: "0 0 0 10px",
+    cursor: "pointer",
+  },
+  ".cm-panel.cm-search input[type=checkbox]": {
+    accentColor: "var(--ed-task)",
+    margin: "0",
   },
 });
 

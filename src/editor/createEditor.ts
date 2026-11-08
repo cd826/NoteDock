@@ -87,8 +87,33 @@ function linkClickExtension(): Extension {
   });
 }
 
+const zhSearchPhrases: Record<string, string> = {
+  Find: "查找",
+  Replace: "替换",
+  next: "下一个",
+  previous: "上一个",
+  all: "全部",
+  "match case": "区分大小写",
+  "by word": "全词匹配",
+  regexp: "正则",
+  replace: "替换",
+  "replace all": "全部替换",
+  close: "关闭",
+  "current match": "当前匹配",
+  "replaced $ matches": "已替换 $ 处",
+  "replaced match on line $": "已替换第 $ 行的匹配",
+  "on line": "行",
+};
+
+/** 搜索面板文案：跟随系统语言（与 i18n 同规则）。 */
+function searchPhrasesExtension(): Extension {
+  const zh = navigator.language.toLowerCase().startsWith("zh");
+  return EditorState.phrases.of(zh ? zhSearchPhrases : {});
+}
+
 export function baseExtensions(): Extension[] {
   return [
+    searchPhrasesExtension(),
     EditorView.lineWrapping,
     history(),
     drawSelection(),
