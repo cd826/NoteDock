@@ -4,6 +4,7 @@ import { ask, save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { ipc } from "../lib/ipc";
 import { flushMeta } from "./metaStore";
 import { parseFsError } from "../lib/fsError";
+import { draftFileName, deriveDraftTitle } from "../lib/draftTitle";
 import { basename, defaultNameFor, kindForPath } from "../lib/path";
 import { useUiStore } from "../lib/toast";
 import { useMetaStore } from "./metaStore";
@@ -355,7 +356,13 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
       patchTab(id, { cursor: cursor ?? tab.cursor });
       return;
     }
-    patchTab(id, { content, dirty: true, cursor: cursor ?? tab.cursor });
+    // 草稿标题从首行实时抽取（标签页/侧栏/保存面板共用，用户需求 2026-11-10）
+    patchTab(id, {
+      content,
+      dirty: true,
+      cursor: cursor ?? tab.cursor,
+      ...(tab.path === null ? { title: deriveDraftTitle(content, tab.title) } : {}),
+    });
   },
 
   setTabConflict: (id, conflict) => {
@@ -441,7 +448,8 @@ async function performSaveAs(id: string): Promise<boolean> {
   const tab = findTab(id);
   if (!tab) return false;
   const dir = tab.path === null ? await defaultSaveDir() : undefined;
-  const defaultPath = tab.path ?? (dir ? `${dir.replace(/\/$/, "")}/${tab.title}` : tab.title);
+  const defaultName = tab.path === null ? draftFileName(tab.title, tab.kind) : tab.title;
+  const defaultPath = tab.path ?? (dir ? `${dir.replace(/\/$/, "")}/${defaultName}` : defaultName);
   const path = await dialogSave({ defaultPath, filters: FILE_FILTERS });
   if (!path || (tab.path !== null && path === tab.path)) return false;
   // 新路径无冲突基线（expectedMtime 传 null 跳过检测）

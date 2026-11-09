@@ -215,6 +215,26 @@ describe("新建草稿流程", () => {
     ]);
   });
 
+  it("草稿标题从首行实时抽取；已保存文件标题不受内容影响", async () => {
+    await useTabsStore.getState().newFile("md");
+    const draft = activeTab()!;
+    useTabsStore.getState().updateContent(draft.id, "# 会议纪要\n\n正文");
+    expect(activeTab()?.title).toBe("会议纪要");
+    // 首行变化跟随更新
+    useTabsStore.getState().updateContent(draft.id, "## 换个主题\n正文");
+    expect(activeTab()?.title).toBe("换个主题");
+
+    // 已落盘文件：标题始终是文件名
+    readTextFileMock.mockResolvedValue(fileInfo("/a.md", "# 不是标题", 1000));
+    await useTabsStore.getState().openPath("/a.md");
+    expect(useTabsStore.getState().tabs.find((t) => t.path === "/a.md")?.title).toBe("a.md");
+    useTabsStore.getState().updateContent(
+      useTabsStore.getState().tabs.find((t) => t.path === "/a.md")!.id,
+      "# 改了内容",
+    );
+    expect(useTabsStore.getState().tabs.find((t) => t.path === "/a.md")?.title).toBe("a.md");
+  });
+
   it("草稿首次 ⌘S：选择位置 → 写盘 → 变普通文件并记入最近", async () => {
     await useTabsStore.getState().newFile("md");
     const id = activeTab()!.id;
@@ -225,9 +245,9 @@ describe("新建草稿流程", () => {
     const ok = await useTabsStore.getState().save(id);
     expect(ok).toBe(true);
     expect(saveDialogMock).toHaveBeenCalledTimes(1);
-    // 默认保存位置：文稿目录 + 当前草稿名
+    // 默认保存位置：文稿目录 + 首行抽取的标题（# draft → draft.md）
     expect(saveDialogMock.mock.calls[0][0]).toMatchObject({
-      defaultPath: `/tmp/docs/${defaultNameFor("md")}`,
+      defaultPath: "/tmp/docs/draft.md",
     });
     expect(writeTextFileMock.mock.calls[0][0]).toMatchObject({
       path: "/saved/draft1.md",
@@ -252,6 +272,19 @@ describe("新建草稿流程", () => {
     expect(tab.path).toBeNull();
     expect(tab.dirty).toBe(true);
     expect(tab.content).toBe("keep me");
+  });
+
+  it("草稿保存面板默认文件名来自首行抽取的标题", async () => {
+    await useTabsStore.getState().newFile("md");
+    const id = activeTab()!.id;
+    useTabsStore.getState().updateContent(id, "# 项目排期\n\n内容");
+    saveDialogMock.mockResolvedValue("/saved/项目排期.md");
+    writeTextFileMock.mockResolvedValue({ mtime: 7000 });
+
+    await useTabsStore.getState().save(id);
+    expect(saveDialogMock.mock.calls[0][0]).toMatchObject({
+      defaultPath: "/tmp/docs/项目排期.md",
+    });
   });
 
   it("关闭脏草稿：确认丢弃后关闭；取消则保留（不写盘）", async () => {

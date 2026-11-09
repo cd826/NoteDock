@@ -40,21 +40,12 @@ function SidebarButton({ icon: Icon, label, onClick }: { icon: LucideIcon; label
   );
 }
 
-function ItemIcon({ path }: { path: string }) {
-  const Icon = kindIcon(path.split(".").pop()?.toLowerCase() ?? "");
-  return (
-    <Icon
-      size={13}
-      strokeWidth={1.6}
-      className="shrink-0 text-neutral-400 dark:text-neutral-500"
-    />
-  );
-}
-
 interface FileItemProps {
-  path: string;
-  missing: boolean;
-  /** 是否为当前打开的文件（选中态与路径绑定，不依赖列表索引）。 */
+  /** 显示名：文件为 basename，草稿为抽取的标题。 */
+  name: string;
+  icon: LucideIcon;
+  missing?: boolean;
+  /** 是否为当前打开的文件（选中态与条目标识绑定，不依赖列表索引）。 */
   active: boolean;
   onOpen: () => void;
   /** 固定文件的操作：取消固定；最近文件的操作：固定 + 移除。 */
@@ -64,9 +55,8 @@ interface FileItemProps {
   onDropAtIndex?: (index: number) => void;
 }
 
-function FileItem({ path, missing, active, onOpen, actions, draggableIndex, onDragStartIndex, onDropAtIndex }: FileItemProps) {
+function FileItem({ name, icon: Icon, missing = false, active, onOpen, actions, draggableIndex, onDragStartIndex, onDropAtIndex }: FileItemProps) {
   const [dragOver, setDragOver] = useState(false);
-  const name = basename(path);
   const selected = active && !missing;
   return (
     <div
@@ -102,7 +92,11 @@ function FileItem({ path, missing, active, onOpen, actions, draggableIndex, onDr
         dragOver ? "bg-blue-100 dark:bg-blue-900/40 ring-1 ring-blue-400" : "",
       ].join(" ")}
     >
-      <ItemIcon path={path} />
+      <Icon
+        size={13}
+        strokeWidth={1.6}
+        className="shrink-0 text-neutral-400 dark:text-neutral-500"
+      />
       <span className="min-w-0 flex-1 truncate">{name}</span>
       <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
         {actions}
@@ -162,11 +156,15 @@ export default function Sidebar({ width }: { width: number }) {
   const recentLimit = useMetaStore((s) => s.meta.prefs.recentLimit);
   const missingPaths = useUiStore((s) => s.missingPaths);
   const openPath = useTabsStore((s) => s.openPath);
-  // 当前打开文件的路径（派生原始值：仅路径变化时触发重渲染，与列表索引无关）
+  const setActive = useTabsStore((s) => s.setActive);
+  // 未落盘草稿（会话态：不入最近列表持久化，重启随标签页消失）
+  const drafts = useTabsStore((s) => s.tabs.filter((t) => t.path === null));
+  // 当前打开文件的路径与活动标签（派生原始值：仅变化时触发重渲染）
   const activeTabPath = useTabsStore((s) => {
     const tab = s.tabs.find((t) => t.id === s.activeId);
     return tab?.path ?? null;
   });
+  const activeTabId = useTabsStore((s) => s.activeId);
   const [expanded, setExpanded] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const focusTickRef = useRef(0);
@@ -215,7 +213,8 @@ export default function Sidebar({ width }: { width: number }) {
               {pinned.map((entry, index) => (
                 <FileItem
                   key={entry.path}
-                  path={entry.path}
+                  name={basename(entry.path)}
+                  icon={kindIcon(entry.path.split(".").pop()?.toLowerCase() ?? "")}
                   missing={!!missingPaths[entry.path]}
                   active={activeTabPath === entry.path}
                   onOpen={() => void openPath(entry.path)}
@@ -255,7 +254,21 @@ export default function Sidebar({ width }: { width: number }) {
             ) : null
           }
         >
-          {recents.length === 0 ? (
+          {/* 未落盘草稿：显示首行抽取的标题，点击切回标签页（会话态，不入持久化列表） */}
+          {drafts.length > 0 && (
+            <div className={recents.length > 0 ? "mb-1.5 flex flex-col gap-0.5" : "flex flex-col gap-0.5"}>
+              {drafts.map((draft) => (
+                <FileItem
+                  key={draft.id}
+                  name={draft.title}
+                  icon={kindIcon(draft.kind)}
+                  active={activeTabId === draft.id}
+                  onOpen={() => void setActive(draft.id)}
+                />
+              ))}
+            </div>
+          )}
+          {recents.length === 0 && drafts.length === 0 ? (
             <EmptyHint text={t("emptyRecent")} />
           ) : (
             <>
@@ -263,7 +276,8 @@ export default function Sidebar({ width }: { width: number }) {
                 {visibleRecents.map((entry) => (
                   <FileItem
                     key={entry.path}
-                    path={entry.path}
+                    name={basename(entry.path)}
+                    icon={kindIcon(entry.path.split(".").pop()?.toLowerCase() ?? "")}
                     missing={!!missingPaths[entry.path]}
                     active={activeTabPath === entry.path}
                     onOpen={() => void openPath(entry.path)}
