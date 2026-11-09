@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Database,
   File as FileIcon,
@@ -157,8 +157,10 @@ export default function Sidebar({ width }: { width: number }) {
   const missingPaths = useUiStore((s) => s.missingPaths);
   const openPath = useTabsStore((s) => s.openPath);
   const setActive = useTabsStore((s) => s.setActive);
-  // 未落盘草稿（会话态：不入最近列表持久化，重启随标签页消失）
-  const drafts = useTabsStore((s) => s.tabs.filter((t) => t.path === null));
+  // 选择器必须返回稳定引用：数组过滤放 useMemo（不稳定引用会触发
+  // useSyncExternalStore 无限重渲染 → 黑屏，zustand v5 硬约束）
+  const tabs = useTabsStore((s) => s.tabs);
+  const drafts = useMemo(() => tabs.filter((t) => t.path === null), [tabs]);
   // 当前打开文件的路径与活动标签（派生原始值：仅变化时触发重渲染）
   const activeTabPath = useTabsStore((s) => {
     const tab = s.tabs.find((t) => t.id === s.activeId);

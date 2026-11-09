@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { invoke } from "@tauri-apps/api/core";
+import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import "./styles/global.css";
 
 // 【临时诊断】全局错误上报（排查后移除）
@@ -13,6 +14,8 @@ window.addEventListener("unhandledrejection", (e) => reportErr(`[rejection] ${St
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>,
 );
