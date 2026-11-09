@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# 内部文档与本地资料（不入公开仓库，2026-11-10）
+docs/
+NoteDock需求说明.md
+.zcode/
+*.dmg
