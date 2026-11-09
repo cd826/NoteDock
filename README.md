@@ -102,3 +102,7 @@ macOS 10.15+，Universal（Apple Silicon + Intel）双架构，版本 0.1.0。
 ## Community
 
 This project has been linked and endorsed by [LINUX DO Community](https://linux.do).
+
+## License
+
+[MIT](./LICENSE) © 2026 cd826
